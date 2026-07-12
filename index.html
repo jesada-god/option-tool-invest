@@ -735,8 +735,7 @@
     <div class="portfolio-panel">
         <h3 style="margin:0; font-size:16px; color:white;">💼 กระเป๋าพอร์ตสัญญาออปชันที่ถืออยู่ (Real-Time P&L Engine)
         </h3>
-        <p style="font-size:12px; color:var(--text-muted); margin: 6px 0 0 0;">คำนวณกำไร/ขาดทุนสะท้อน Leverage คูณ 100
-            เสมอตามราคาสินทรัพย์อ้างอิง</p>
+        <p style="font-size:12px; color:var(--text-muted); margin: 6px 0 0 0;">(คำเตือน: ช่องราคาพรีเมียม ให้กรอก "ราคาต่อหุ้น" เช่น 1.38 ระบบจะคูณ 100 ให้อัตโนมัติ)</p>
 
         <form id="pos-form" onsubmit="submitPosition(event)">
             <div class="form-grid">
@@ -746,8 +745,10 @@
                     <option value="PUT">BUY PUT (มองลง)</option>
                 </select>
                 <input type="date" id="form-exp" required>
-                <input type="number" id="form-premium" placeholder="ราคาต้นทุน ($)" step="0.01" required>
+                <input type="number" id="form-premium" placeholder="พรีเมียมต่อหุ้น (เช่น 1.38)" step="0.01" required>
                 <input type="number" id="form-qty" placeholder="Quantity (สัญญา)" required>
+                <input type="number" id="form-iv" placeholder="IV % (เช่น 114.5)" step="0.1">
+                <input type="number" id="form-delta" placeholder="Delta (เช่น 0.45)" step="0.01">
                 <button type="submit" class="btn-submit">เปิดสัญญา</button>
             </div>
         </form>
@@ -759,13 +760,12 @@
                         <th>หุ้นแม่</th>
                         <th>ประเภท</th>
                         <th>Strike</th>
-                        <th>วันหมดอายุ</th>
-                        <th>ราคาต้นทุน</th>
-                        <th>จำนวน</th>
-                        <th>ราคาหุ้นปัจจุบัน</th>
-                        <th>ราคาตั้งขาย<br><span
-                                style="font-size:10px; color:var(--gold); text-transform:none;">(ต่อหุ้น/ประเมิน)</span>
-                        </th>
+                        <th>หมดอายุ</th>
+                        <th>พรีเมียมที่จ่าย<br><span style="font-size:10px; color:var(--text-muted);">(ต่อหุ้น)</span></th>
+                        <th>สัญญา</th>
+                        <th>IV / Delta</th>
+                        <th>หุ้นแม่ปัจจุบัน</th>
+                        <th>ประเมินราคาขาย<br><span style="font-size:10px; color:var(--gold);">(ต่อหุ้น)</span></th>
                         <th>กำไร/ขาดทุน (P&L)</th>
                         <th>จัดการ</th>
                     </tr>
@@ -959,8 +959,6 @@
             `).join('');
         }
 
-        // Fair Value: analyst-target + Graham Number + forward-P/E blend from backend,
-        // color-coded green (undervalued / upside) or red (overvalued / downside)
         function setFairValueDisplay(fairValue, upsidePct) {
             const el = document.getElementById('stat-cap');
             if (fairValue === null || fairValue === undefined) { el.innerText = '-'; return; }
@@ -973,7 +971,6 @@
             el.innerHTML = `$${fairValue.toFixed(2)} <span style="font-size:11px; color:${color};">(${sign}${upsidePct}%)</span>`;
         }
 
-        // Render the S/R ladder (R3..R1 on top, current price marker, S1..S3 below)
         function renderSRLadder() {
             const banner = document.getElementById('sr-alert-banner');
             const ladder = document.getElementById('sr-ladder');
@@ -992,7 +989,7 @@
                 </div>`;
             };
 
-            const resistancesDesc = [...srData.resistance].reverse(); // R3, R2, R1 (farthest -> nearest, top to bottom)
+            const resistancesDesc = [...srData.resistance].reverse(); 
             let html = resistancesDesc.map(r => rowHtml(r, 'resistance')).join('');
             html += `<div class="sr-current-marker">💲 ราคาปัจจุบัน $${srData.current_price.toFixed(2)}</div>`;
             html += srData.support.map(s => rowHtml(s, 'support')).join('');
@@ -1012,8 +1009,6 @@
             }
         }
 
-        // Keep the ladder's distance/alert responsive to live price ticks without
-        // waiting for the next full /api/indicators refetch (ETA values stay as last computed).
         function recomputeSRDistances(livePrice) {
             if (!srData || !livePrice) return;
             srData.current_price = livePrice;
@@ -1120,14 +1115,13 @@
             btn.classList.add('active'); currentTimeframe = tf; removeSRLines(); fetchDashboardData();
         }
 
-        // วาดเส้นแนวรับ-แนวต้าน (S1-S3 / R1-R3) — เส้นหนาให้เห็นชัด, ระดับใกล้ราคาสุด (S1/R1) หนาสุด
         function toggleSupportResistance() {
             if (isSRVisible) { removeSRLines(); }
             else {
                 if (!srData) return;
-                const resColors = ['#ff8a80', '#ff5c4d', '#ff3b30']; // R1 (near) -> R3 (far)
-                const supColors = ['#69f0ae', '#2ee08a', '#00c57f']; // S1 (near) -> S3 (far)
-                const widths = [4, 3, 3]; // R1/S1 หนาสุด, R2-R3/S2-S3 หนารองลงมา
+                const resColors = ['#ff8a80', '#ff5c4d', '#ff3b30']; 
+                const supColors = ['#69f0ae', '#2ee08a', '#00c57f']; 
+                const widths = [4, 3, 3]; 
                 const f = (p, c, w, t) => leftDummySeries.createPriceLine({ price: p, color: c, lineWidth: w, lineStyle: LightweightCharts.LineStyle.Solid, title: t });
 
                 srData.resistance.forEach((r, i) => srLines.push(f(r.level, resColors[i] || '#ff3b30', widths[i] || 3, `${r.label} แนวต้าน`)));
@@ -1150,13 +1144,15 @@
         function renderPortfolioTable() {
             const tbody = document.getElementById('portfolio-rows');
             if (activePositions.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; color:var(--text-muted); padding:20px;">💼 พอร์ตว่างเปล่า ลองระบุเงื่อนไขด้านบนเพื่อเปิดสถานะสัญญาจำลอง</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; color:var(--text-muted); padding:20px;">💼 พอร์ตว่างเปล่า ลองระบุเงื่อนไขด้านบนเพื่อเปิดสถานะสัญญาจำลอง</td></tr>`;
                 return;
             }
             tbody.innerHTML = activePositions.map(p => {
                 const currentUPrice = parseFloat(p.current_underlying_price || p.entry_underlying_price);
                 const pnl = parseFloat(p.pnl);
                 const pnlPercent = parseFloat(p.pnl_percent);
+                const ivDisp = p.iv ? p.iv + '%' : '-';
+                const deltaDisp = p.delta ? p.delta : '-';
 
                 let currentSellPrice = parseFloat(p.premium_paid) + (pnl / (p.quantity * 100));
                 if (currentSellPrice < 0.01) currentSellPrice = 0.01;
@@ -1170,8 +1166,9 @@
                     <td style="color:${p.option_type === 'CALL' ? 'var(--green)' : 'var(--red)'}; font-weight:bold;">${p.option_type}</td>
                     <td>$${p.strike_price}</td>
                     <td>${p.expiration}</td>
-                    <td>$${p.premium_paid}</td>
+                    <td>$${parseFloat(p.premium_paid).toFixed(2)}</td>
                     <td>${p.quantity}</td>
+                    <td style="color:var(--text-muted); font-size:12px;">${ivDisp} / ${deltaDisp}</td>
                     <td id="table-underlying-${p.id}">$${currentUPrice.toFixed(2)}</td>
                     <td id="table-sellprice-${p.id}" style="font-weight:bold; color:var(--gold);">$${currentSellPrice.toFixed(2)}</td>
                     <td id="table-pnl-${p.id}" class="pnl-cell" style="color:${color}">${sign}$${pnl.toFixed(2)} <span style="font-size:12px;">(${sign}${pnlPercent.toFixed(2)}%)</span></td>
@@ -1188,7 +1185,9 @@
                 option_type: document.getElementById('form-type').value,
                 expiration: document.getElementById('form-exp').value,
                 premium_paid: parseFloat(document.getElementById('form-premium').value),
-                quantity: parseInt(document.getElementById('form-qty').value)
+                quantity: parseInt(document.getElementById('form-qty').value),
+                iv: parseFloat(document.getElementById('form-iv').value) || 0.0,
+                delta: parseFloat(document.getElementById('form-delta').value) || 0.0
             };
 
             await fetch('/api/positions', {
@@ -1208,7 +1207,6 @@
         // --- ⚡ Real-Time WebSocket Connection ---
         function initWebSocket() {
             if (ws) ws.close();
-
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const wsUrl = `${protocol}//${window.location.host}/ws/price/${currentTicker}`;
             ws = new WebSocket(wsUrl);
@@ -1216,7 +1214,6 @@
             ws.onmessage = function (event) {
                 const data = JSON.parse(event.data);
                 if (data.market_session && data.market_session !== "REGULAR") {
-                    // ตลาดเพิ่งปิดระหว่างที่เชื่อมต่ออยู่ -> หยุดอัปเดตราคาแบบสุ่ม
                     currentMarketSession = data.market_session;
                     ws.close(); ws = null;
                     return;
@@ -1225,45 +1222,57 @@
                 const lastPrice = currentLivePrice;
                 currentLivePrice = newPrice;
 
-                // Update Price Display
                 const priceDisplay = document.getElementById('live-price');
                 if (priceDisplay) {
                     priceDisplay.innerText = `$${currentLivePrice.toFixed(2)}`;
                     priceDisplay.style.color = currentLivePrice >= lastPrice ? 'var(--green)' : 'var(--red)';
                 }
 
-                // Keep S/R alert ladder + banner responsive to the live price tick
                 recomputeSRDistances(currentLivePrice);
 
-                // Update Chart live candle
                 if (globalChartData.length > 0) {
                     const lastData = globalChartData[globalChartData.length - 1];
                     lastData.close = currentLivePrice;
                     if (currentLivePrice > lastData.high) lastData.high = currentLivePrice;
                     if (currentLivePrice < lastData.low) lastData.low = currentLivePrice;
-
                     candleSeries.update(lastData);
                     leftDummySeries.update({ time: lastData.time, value: currentLivePrice });
                 }
 
-                // Local Fast-update for Portfolio P&L Table (without fetching API every second)
+                // 🌟 อัปเดตราคา P&L แบบ Real-time โดยใช้ค่า Delta ของจริง
                 activePositions.forEach(p => {
                     if (p.ticker === currentTicker) {
                         const entryU = parseFloat(p.entry_underlying_price);
-                        let pnl = p.option_type === "CALL" ? (currentLivePrice - entryU) * 100 * p.quantity : (entryU - currentLivePrice) * 100 * p.quantity;
+                        const initialPremium = parseFloat(p.premium_paid);
+                        let currentPremium = initialPremium;
 
-                        const principal = parseFloat(p.premium_paid) * p.quantity * 100;
+                        // ถ้าผู้ใช้กรอก Delta ให้เอามาคำนวณการเปลี่ยนแปลงของพรีเมียมเลย (เร็วและแม่นยำกว่า)
+                        if (p.delta && parseFloat(p.delta) !== 0) {
+                            let actualDelta = parseFloat(p.delta);
+                            // แก้ทางเผื่อ User กรอก Delta ฝั่ง PUT เป็นค่าบวก
+                            if (p.option_type === "PUT" && actualDelta > 0) actualDelta = -actualDelta;
+                            currentPremium = initialPremium + (actualDelta * (currentLivePrice - entryU));
+                        } else {
+                            // ถ้าไม่ใส่ Delta มา จะประเมินคร่าวๆ ด้วย Delta = 0.5
+                            if (p.option_type === "CALL") {
+                                currentPremium += (currentLivePrice - entryU) * 0.5;
+                            } else {
+                                currentPremium += (entryU - currentLivePrice) * 0.5;
+                            }
+                        }
+
+                        currentPremium = Math.max(currentPremium, 0.01); // ราคาพรีเมียมต่ำสุดคือ 0.01
+                        let pnl = (currentPremium - initialPremium) * 100 * p.quantity;
+                        
+                        const principal = initialPremium * p.quantity * 100;
                         const pnlPercent = principal > 0 ? (pnl / principal) * 100 : 0;
-
-                        let currentSellPrice = parseFloat(p.premium_paid) + (pnl / (p.quantity * 100));
-                        if (currentSellPrice < 0.01) currentSellPrice = 0.01;
 
                         const cellPrice = document.getElementById(`table-underlying-${p.id}`);
                         const cellPnl = document.getElementById(`table-pnl-${p.id}`);
                         const cellSellPrice = document.getElementById(`table-sellprice-${p.id}`);
 
                         if (cellPrice) cellPrice.innerText = `$${currentLivePrice.toFixed(2)}`;
-                        if (cellSellPrice) cellSellPrice.innerText = `$${currentSellPrice.toFixed(2)}`;
+                        if (cellSellPrice) cellSellPrice.innerText = `$${currentPremium.toFixed(2)}`;
 
                         if (cellPnl) {
                             const sign = pnl >= 0 ? '+' : '';
@@ -1304,34 +1313,46 @@
                 const resDiv = document.getElementById('sim-result');
                 resDiv.style.display = 'block';
                 
+                // ดักจับ Error หากฝั่ง API คำนวณไม่ได้หรือพัง
                 if (data.error) {
-                    resDiv.innerHTML = `<span style="color:var(--red); font-weight:bold;">⚠️ ${data.error}</span>`;
-                } else {
-                    const color = data.pnl_per_share >= 0 ? 'var(--green)' : 'var(--red)';
-                    const sign = data.pnl_per_share >= 0 ? '+' : '';
-                    
-                    resDiv.innerHTML = `
-                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
-                            <div>
-                                <span style="color:var(--text-muted); font-size:12px;">จุดคุ้มทุน (Break-Even)</span><br>
-                                <strong style="font-size:16px;">$${data.break_even}</strong>
-                            </div>
-                            <div>
-                                <span style="color:var(--text-muted); font-size:12px;">พรีเมียมคาดการณ์ ณ วันเป้าหมาย</span><br>
-                                <strong style="font-size:16px; color:var(--gold);">$${data.simulated_premium}</strong>
-                            </div>
-                            <div>
-                                <span style="color:var(--text-muted); font-size:12px;">กำไร/ขาดทุนโดยประมาณ</span><br>
-                                <strong style="font-size:16px; color:${color};">${sign}$${data.pnl_per_share} (${sign}${data.pnl_percent}%)</strong>
-                            </div>
-                        </div>
-                        <div style="margin-top:10px; font-size:12px; color:var(--text-muted); border-top: 1px dashed var(--panel-border); padding-top: 10px;">
-                            *เหลือเวลาจนถึงวันหมดอายุ <strong>${data.days_remaining} วัน</strong> (ผลลัพธ์นี้คำนวณหัก Time Decay จากค่า IV ที่ให้มาเรียบร้อยแล้ว)
-                        </div>
-                    `;
+                    resDiv.innerHTML = `<span style="color:var(--red); font-weight:bold;">⚠️ เกิดข้อผิดพลาด: ${data.error}</span>`;
+                    return;
                 }
+                if (data.detail) {
+                    resDiv.innerHTML = `<span style="color:var(--red); font-weight:bold;">⚠️ ข้อมูลที่ส่งไปไม่ถูกต้อง (API Error): ${JSON.stringify(data.detail)}</span>`;
+                    return;
+                }
+                if (data.simulated_premium === undefined) {
+                    resDiv.innerHTML = `<span style="color:var(--red); font-weight:bold;">⚠️ เชื่อมต่อ API ล้มเหลว กรุณาตรวจสอบการตั้งค่าเซิร์ฟเวอร์</span>`;
+                    return;
+                }
+
+                // หากไม่มี Error ค่อยแสดงผลลัพธ์
+                const color = data.pnl_total >= 0 ? 'var(--green)' : 'var(--red)';
+                const sign = data.pnl_total >= 0 ? '+' : '';
+                
+                resDiv.innerHTML = `
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                        <div>
+                            <span style="color:var(--text-muted); font-size:12px;">จุดคุ้มทุน (Break-Even)</span><br>
+                            <strong style="font-size:16px;">$${data.break_even}</strong>
+                        </div>
+                        <div>
+                            <span style="color:var(--text-muted); font-size:12px;">พรีเมียมคาดการณ์ ณ วันเป้าหมาย</span><br>
+                            <strong style="font-size:16px; color:var(--gold);">$${data.simulated_premium}</strong>
+                        </div>
+                        <div>
+                            <span style="color:var(--text-muted); font-size:12px;">กำไร/ขาดทุนโดยประมาณ (ต่อสัญญา)</span><br>
+                            <strong style="font-size:16px; color:${color};">${sign}$${data.pnl_total} (${sign}${data.pnl_percent}%)</strong>
+                        </div>
+                    </div>
+                    <div style="margin-top:10px; font-size:12px; color:var(--text-muted); border-top: 1px dashed var(--panel-border); padding-top: 10px;">
+                        *เหลือเวลาจนถึงวันหมดอายุ <strong>${data.days_remaining} วัน</strong> (ผลลัพธ์นี้คำนวณหัก Time Decay จากค่า IV ที่ให้มาเรียบร้อยแล้ว)
+                    </div>
+                `;
             } catch (err) {
                 console.error(err);
+                alert("ไม่สามารถติดต่อเซิร์ฟเวอร์ได้ ลองเช็คหน้า Render ว่า Deploy เสร็จสมบูรณ์หรือยังครับ");
             }
         }
 

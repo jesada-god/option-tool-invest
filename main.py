@@ -27,6 +27,8 @@ class PositionModel(BaseModel):
     expiration: str
     premium_paid: float
     quantity: int
+    iv: float = 0.0      # เพิ่มรองรับ IV
+    delta: float = 0.0   # เพิ่มรองรับ Delta
 
 
 def send_line_alert(message: str):
@@ -40,6 +42,34 @@ def send_line_alert(message: str):
     except Exception as e:
         print(f"LINE Notify Error: {e}")
 
+# ---------------------------------------------------------------------------
+# 🔮 Options Math & Black-Scholes Model
+# ---------------------------------------------------------------------------
+def norm_cdf(x):
+    """ฟังก์ชันสะสมความน่าจะเป็นแบบปกติ (Standard Normal CDF)"""
+    return (1.0 + math.erf(x / math.sqrt(2.0))) / 2.0
+
+def black_scholes(S, K, T, r, sigma, option_type="CALL"):
+    """
+    S: ราคาหุ้นเป้าหมาย (Target Price)
+    K: ราคา Strike
+    T: เวลาที่เหลือจนกว่าจะหมดอายุ (เป็นสัดส่วนของปี เช่น 30 วัน = 30/365)
+    r: อัตราดอกเบี้ยปลอดความเสี่ยง (ใช้ 0.05 หรือ 5%)
+    sigma: ค่าความผันผวนแฝง (IV - Implied Volatility)
+    """
+    if T <= 0:
+        return max(0.0, S - K) if option_type == "CALL" else max(0.0, K - S)
+    
+    # ป้องกันกรณี IV เป็น 0
+    sigma = max(sigma, 0.001) 
+    
+    d1 = (math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
+    d2 = d1 - sigma * math.sqrt(T)
+    
+    if option_type == "CALL":
+        return S * norm_cdf(d1) - K * math.exp(-r * T) * norm_cdf(d2)
+    else:
+        return K * math.exp(-r * T) * norm_cdf(-d2) - S * norm_cdf(-d1)
 
 # ---------------------------------------------------------------------------
 # 🕒 Market session helper (America/New_York)
@@ -57,7 +87,6 @@ def get_market_session() -> str:
     if dtime(16, 0) <= t < dtime(20, 0):
         return "POST"
     return "CLOSED"
-
 
 def get_price_bundle(ticker: str) -> dict:
     session = get_market_session()
@@ -103,7 +132,6 @@ def get_price_bundle(ticker: str) -> dict:
         "market_session": session,
     }
 
-
 def get_base_price(ticker: str) -> float:
     if ticker in live_prices:
         return live_prices[ticker]
@@ -113,7 +141,6 @@ def get_base_price(ticker: str) -> float:
     except Exception:
         live_prices[ticker] = 100.0
         return 100.0
-
 
 def get_live_1m_price(ticker: str):
     try:
@@ -131,7 +158,6 @@ def get_live_1m_price(ticker: str):
         pass
     return None
 
-
 def calculate_rsi(series, period=14):
     delta = series.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
@@ -139,15 +165,13 @@ def calculate_rsi(series, period=14):
     rs = gain / loss
     return 100 - (100 / (100 + rs))
 
-
 # ---------------------------------------------------------------------------
-# 🧠 Call/Put Score Optimized (Technical 60% + Fundamental 40% แยกตรรกะอิสระ)
+# 🧠 Call/Put Score Optimized (Technical 60% + Fundamental 40%)
 # ---------------------------------------------------------------------------
 def calculate_option_scores(ticker: str, info: dict):
     call_technical_score = 50.0
     put_technical_score = 50.0
     
-    # --- 1. Technical Analysis (60%) ---
     try:
         hist = yf.Ticker(ticker).history(period="6mo", interval="1d")
         if not hist.empty and len(hist) > 20:
@@ -158,7 +182,6 @@ def calculate_option_scores(ticker: str, info: dict):
             ema50 = closes.ewm(span=50, adjust=False).mean().iloc[-1] if len(closes) >= 50 else ema20
             last_close = closes.iloc[-1]
 
-            # เจาะลึก RSI ฝั่ง Call (Bullish Momentum)
             if 50 <= last_rsi <= 70:
                 call_rsi_score = 88.0
             elif last_rsi > 70:  
@@ -168,7 +191,6 @@ def calculate_option_scores(ticker: str, info: dict):
             else:
                 call_rsi_score = last_rsi
 
-            # เจาะลึก RSI ฝั่ง Put (Bearish Momentum)
             if 30 <= last_rsi <= 50:
                 put_rsi_score = 88.0
             elif last_rsi < 30:  
@@ -178,31 +200,22 @@ def calculate_option_scores(ticker: str, info: dict):
             else:
                 put_rsi_score = 100.0 - last_rsi
 
-            # วิเคราะห์ Trend ด้วย EMA Crossover 
             if last_close > ema20 > ema50:         
-                call_trend_score = 90.0
-                put_trend_score = 10.0
+                call_trend_score, put_trend_score = 90.0, 10.0
             elif last_close > ema20 and ema20 <= ema50:  
-                call_trend_score = 70.0
-                put_trend_score = 30.0
+                call_trend_score, put_trend_score = 70.0, 30.0
             elif last_close < ema20 < ema50:       
-                call_trend_score = 10.0
-                put_trend_score = 90.0
+                call_trend_score, put_trend_score = 10.0, 90.0
             elif last_close < ema20 and ema20 >= ema50:  
-                call_trend_score = 30.0
-                put_trend_score = 70.0
+                call_trend_score, put_trend_score = 30.0, 70.0
             else:
-                call_trend_score = 50.0
-                put_trend_score = 50.0
+                call_trend_score, put_trend_score = 50.0, 50.0
 
-            # ถ่วงน้ำหนักสายเทคนิค: Trend 60% และ RSI Momentum 40%
             call_technical_score = (call_rsi_score * 0.4) + (call_trend_score * 0.6)
             put_technical_score = (put_rsi_score * 0.4) + (put_trend_score * 0.6)
     except Exception:
-        call_technical_score = 50.0
-        put_technical_score = 50.0
+        pass
 
-    # --- 2. Fundamental Analysis (40%) ---
     call_fundamental_score = 50.0
     put_fundamental_score = 50.0
     try:
@@ -212,7 +225,6 @@ def calculate_option_scores(ticker: str, info: dict):
         rev_growth = info.get('revenueGrowth')
         profit_margin = info.get('profitMargins')
 
-        # === [คำนวณฝั่ง Call Fundamental] ===
         call_subs = []
         if rec_mean:
             call_subs.append(max(0, min(100, (5.0 - float(rec_mean)) * 25)))
@@ -223,11 +235,9 @@ def calculate_option_scores(ticker: str, info: dict):
             call_subs.append(max(0, min(100, 50 + float(rev_growth) * 100)))
         if profit_margin is not None:
             call_subs.append(max(0, min(100, 50 + float(profit_margin) * 100)))
-        
         if call_subs:
             call_fundamental_score = sum(call_subs) / len(call_subs)
 
-        # === [คำนวณฝั่ง Put Fundamental] ===
         put_subs = []
         if rec_mean:
             put_subs.append(max(0, min(100, (float(rec_mean) - 1.0) * 25)))
@@ -238,22 +248,15 @@ def calculate_option_scores(ticker: str, info: dict):
             put_subs.append(max(0, min(100, 50 - float(rev_growth) * 100)))
         if profit_margin is not None:
             put_subs.append(max(0, min(100, 50 - float(profit_margin) * 100)))
-
         if put_subs:
             put_fundamental_score = sum(put_subs) / len(put_subs)
-
     except Exception:
         pass
 
-    # รวมคะแนนรวมถ่วงน้ำหนัก (Technical 60% + Fundamental 40%)
-    call_score = round((call_technical_score * 0.6) + (call_fundamental_score * 0.4))
-    call_score = int(max(0, min(100, call_score)))
-
-    put_score = round((put_technical_score * 0.6) + (put_fundamental_score * 0.4))
-    put_score = int(max(0, min(100, put_score)))
+    call_score = int(max(0, min(100, round((call_technical_score * 0.6) + (call_fundamental_score * 0.4)))))
+    put_score = int(max(0, min(100, round((put_technical_score * 0.6) + (put_fundamental_score * 0.4)))))
 
     return call_score, put_score
-
 
 def calculate_fair_value(info: dict, current_price: float):
     methods = []   
@@ -288,7 +291,6 @@ def calculate_fair_value(info: dict, current_price: float):
 
     return fair_value, upside_pct
 
-
 def calculate_iv_rank(ticker: str) -> int:
     try:
         stock = yf.Ticker(ticker)
@@ -321,9 +323,8 @@ def calculate_iv_rank(ticker: str) -> int:
     except Exception:
         return 50
 
-
 # ---------------------------------------------------------------------------
-# 🎯 Support / Resistance System & ETA Indicators
+# 🎯 Support / Resistance System
 # ---------------------------------------------------------------------------
 BAR_SECONDS = {
     "1m": 60, "5m": 300, "10m": 600, "15m": 900,
@@ -341,7 +342,6 @@ TIMEFRAME_CONFIG = {
     "week": {"period": "5y",  "interval": "1wk"},
 }
 
-
 def calculate_pivot_levels(h: float, l: float, c: float) -> dict:
     p = (h + l + c) / 3
     r1 = (2 * p) - l
@@ -355,7 +355,6 @@ def calculate_pivot_levels(h: float, l: float, c: float) -> dict:
         "resistance": [round(r1, 2), round(r2, 2), round(r3, 2)],
         "support": [round(s1, 2), round(s2, 2), round(s3, 2)],
     }
-
 
 def get_pivot_source_bar(ticker: str, is_week: bool):
     stock = yf.Ticker(ticker)
@@ -391,7 +390,6 @@ def get_pivot_source_bar(ticker: str, is_week: bool):
         return None
     return bar
 
-
 def get_atr_for_timeframe(ticker: str, timeframe: str, period: int = 14):
     cfg = TIMEFRAME_CONFIG.get(timeframe, TIMEFRAME_CONFIG["1d"])
     stock = yf.Ticker(ticker)
@@ -420,13 +418,10 @@ def get_atr_for_timeframe(ticker: str, timeframe: str, period: int = 14):
         return None
     return float(atr)
 
-
 def format_duration(total_seconds: float) -> str:
     minutes = total_seconds / 60
-    if minutes < 1:
-        return "< 1 นาที"
-    if minutes < 60:
-        return f"~{round(minutes)} นาที"
+    if minutes < 1: return "< 1 นาที"
+    if minutes < 60: return f"~{round(minutes)} นาที"
     hours = minutes / 60
     if hours < 24:
         h = int(hours)
@@ -440,7 +435,6 @@ def format_duration(total_seconds: float) -> str:
     months = days / 30
     return f"~{round(months)} เดือน+"
 
-
 def estimate_eta(distance: float, atr, bar_seconds: int):
     if not atr or atr <= 0 or distance <= 0:
         return None
@@ -448,106 +442,30 @@ def estimate_eta(distance: float, atr, bar_seconds: int):
     total_seconds = bars_needed * bar_seconds
     return format_duration(total_seconds)
 
-
 # ---------------------------------------------------------------------------
-# 📦 Tickers Database & Endpoints
+# 📦 API Endpoints
 # ---------------------------------------------------------------------------
 TICKERS_DB = [
     {"symbol": "AAPL", "name": "Apple Inc."}, {"symbol": "MSFT", "name": "Microsoft Corp."},
-    {"symbol": "GOOGL", "name": "Alphabet Inc. Class A"}, {"symbol": "GOOG", "name": "Alphabet Inc. Class C"},
-    {"symbol": "AMZN", "name": "Amazon.com Inc."}, {"symbol": "NVDA", "name": "NVIDIA Corp."},
-    {"symbol": "META", "name": "Meta Platforms Inc."}, {"symbol": "TSLA", "name": "Tesla Inc."},
-    {"symbol": "AVGO", "name": "Broadcom Inc."}, {"symbol": "BRK-B", "name": "Berkshire Hathaway"},
-    {"symbol": "JPM", "name": "JPMorgan Chase"}, {"symbol": "V", "name": "Visa Inc."},
-    {"symbol": "UNH", "name": "UnitedHealth Group"}, {"symbol": "MA", "name": "Mastercard"},
-    {"symbol": "HD", "name": "Home Depot"}, {"symbol": "PG", "name": "Procter & Gamble"},
-    {"symbol": "COST", "name": "Costco Wholesale"}, {"symbol": "JNJ", "name": "Johnson & Johnson"},
-    {"symbol": "ORCL", "name": "Oracle Corp."}, {"symbol": "MRK", "name": "Merck & Co."},
-    {"symbol": "ABBV", "name": "AbbVie Inc."}, {"symbol": "CVX", "name": "Chevron Corp."},
-    {"symbol": "CRM", "name": "Salesforce Inc."}, {"symbol": "KO", "name": "Coca-Cola Co."},
-    {"symbol": "AMD", "name": "Advanced Micro Devices"}, {"symbol": "PEP", "name": "PepsiCo Inc."},
-    {"symbol": "NFLX", "name": "Netflix Inc."}, {"symbol": "TMO", "name": "Thermo Fisher Scientific"},
-    {"symbol": "ADBE", "name": "Adobe Inc."}, {"symbol": "WMT", "name": "Walmart Inc."},
-    {"symbol": "BAC", "name": "Bank of America"}, {"symbol": "MCD", "name": "McDonald's Corp."},
-    {"symbol": "CSCO", "name": "Cisco Systems"}, {"symbol": "ABT", "name": "Abbott Laboratories"},
-    {"symbol": "PFE", "name": "Pfizer Inc."}, {"symbol": "LIN", "name": "Linde plc"},
-    {"symbol": "ACN", "name": "Accenture"}, {"symbol": "DHR", "name": "Danaher Corp."},
-    {"symbol": "TXN", "name": "Texas Instruments"}, {"symbol": "INTC", "name": "Intel Corp."},
-    {"symbol": "WFC", "name": "Wells Fargo"}, {"symbol": "VZ", "name": "Verizon Communications"},
-    {"symbol": "PM", "name": "Philip Morris International"}, {"symbol": "COP", "name": "ConocoPhillips"},
-    {"symbol": "NKE", "name": "Nike Inc."}, {"symbol": "UNP", "name": "Union Pacific"},
-    {"symbol": "RTX", "name": "RTX Corp."}, {"symbol": "IBM", "name": "IBM"},
-    {"symbol": "QCOM", "name": "Qualcomm Inc."}, {"symbol": "GE", "name": "General Electric"},
-    {"symbol": "CAT", "name": "Caterpillar Inc."}, {"symbol": "AMGN", "name": "Amgen Inc."},
-    {"symbol": "SPGI", "name": "S&P Global"}, {"symbol": "BA", "name": "Boeing Co."},
-    {"symbol": "SBUX", "name": "Starbucks Corp."}, {"symbol": "AMAT", "name": "Applied Materials"},
-    {"symbol": "GS", "name": "Goldman Sachs"}, {"symbol": "BLK", "name": "BlackRock Inc."},
-    {"symbol": "ISRG", "name": "Intuitive Surgical"}, {"symbol": "MDT", "name": "Medtronic plc"},
-    {"symbol": "DE", "name": "Deere & Co."}, {"symbol": "LMT", "name": "Lockheed Martin"},
-    {"symbol": "ADP", "name": "Automatic Data Processing"}, {"symbol": "MU", "name": "Micron Technology"},
-    {"symbol": "T", "name": "AT&T Inc."}, {"symbol": "PLD", "name": "Prologis Inc."},
-    {"symbol": "GILD", "name": "Gilead Sciences"}, {"symbol": "MO", "name": "Altria Group"},
-    {"symbol": "TJX", "name": "TJX Companies"}, {"symbol": "SYK", "name": "Stryker Corp."},
-    {"symbol": "ELV", "name": "Elevance Health"}, {"symbol": "REGN", "name": "Regeneron Pharma"},
-    {"symbol": "BKNG", "name": "Booking Holdings"}, {"symbol": "VRTX", "name": "Vertex Pharmaceuticals"},
-    {"symbol": "PANW", "name": "Palo Alto Networks"}, {"symbol": "ETN", "name": "Eaton Corp."},
-    {"symbol": "NOW", "name": "ServiceNow Inc."}, {"symbol": "ANET", "name": "Arista Networks"},
-    {"symbol": "MRVL", "name": "Marvell Technology"}, {"symbol": "PYPL", "name": "PayPal Holdings"},
-    {"symbol": "CMG", "name": "Chipotle Mexican Grill"}, {"symbol": "SNOW", "name": "Snowflake Inc."},
-    {"symbol": "SHOP", "name": "Shopify Inc."}, {"symbol": "UBER", "name": "Uber Technologies"},
-    {"symbol": "ABNB", "name": "Airbnb Inc."}, {"symbol": "COIN", "name": "Coinbase Global"},
-    {"symbol": "PLTR", "name": "Palantir Technologies"}, {"symbol": "SOFI", "name": "SoFi Technologies"},
-    {"symbol": "RIVN", "name": "Rivian Automotive"}, {"symbol": "LCID", "name": "Lucid Group"},
-    {"symbol": "SMCI", "name": "Super Micro Computer"}, {"symbol": "ARM", "name": "Arm Holdings"},
-    {"symbol": "DELL", "name": "Dell Technologies"}, {"symbol": "MRNA", "name": "Moderna Inc."},
-    {"symbol": "BABA", "name": "Alibaba Group"}, {"symbol": "JD", "name": "JD.com"},
-    {"symbol": "PDD", "name": "PDD Holdings"}, {"symbol": "NIO", "name": "NIO Inc."},
-    {"symbol": "TSM", "name": "Taiwan Semiconductor"}, {"symbol": "ASML", "name": "ASML Holding"},
-    {"symbol": "SONY", "name": "Sony Group"}, {"symbol": "TM", "name": "Toyota Motor"},
-    {"symbol": "F", "name": "Ford Motor Co."}, {"symbol": "GM", "name": "General Motors"},
-    {"symbol": "DIS", "name": "Walt Disney Co."}, {"symbol": "CMCSA", "name": "Comcast Corp."},
-    {"symbol": "WBD", "name": "Warner Bros. Discovery"}, {"symbol": "PARA", "name": "Paramount Global"},
-    {"symbol": "SPOT", "name": "Spotify Technology"}, {"symbol": "RBLX", "name": "Roblox Corp."},
-    {"symbol": "DASH", "name": "DoorDash Inc."}, {"symbol": "CRWD", "name": "CrowdStrike Holdings"},
-    {"symbol": "ZS", "name": "Zscaler Inc."}, {"symbol": "DDOG", "name": "Datadog Inc."},
-    {"symbol": "NET", "name": "Cloudflare Inc."}, {"symbol": "MDB", "name": "MongoDB Inc."},
-    {"symbol": "TEAM", "name": "Atlassian Corp."}, {"symbol": "WDAY", "name": "Workday Inc."},
-    {"symbol": "OKTA", "name": "Okta Inc."}, {"symbol": "TTD", "name": "The Trade Desk"},
-    {"symbol": "ROKU", "name": "Roku Inc."}, {"symbol": "PINS", "name": "Pinterest Inc."},
-    {"symbol": "SNAP", "name": "Snap Inc."}, {"symbol": "RKLB", "name": "Rocket Lab USA"},
-    {"symbol": "ASTS", "name": "AST SpaceMobile"}, {"symbol": "CCJ", "name": "Cameco Corp."},
-    {"symbol": "GEV", "name": "GE Vernova"}, {"symbol": "VRT", "name": "Vertiv Holdings"},
-    {"symbol": "XOM", "name": "Exxon Mobil"}, {"symbol": "SLB", "name": "Schlumberger"},
-    {"symbol": "OXY", "name": "Occidental Petroleum"}, {"symbol": "FCX", "name": "Freeport-McMoRan"},
-    {"symbol": "NEM", "name": "Newmont Corp."}, {"symbol": "C", "name": "Citigroup Inc."},
-    {"symbol": "MS", "name": "Morgan Stanley"}, {"symbol": "SCHW", "name": "Charles Schwab"},
-    {"symbol": "AXP", "name": "American Express"}, {"symbol": "CVS", "name": "CVS Health"},
-    {"symbol": "LLY", "name": "Eli Lilly and Co."}, {"symbol": "SPY", "name": "SPDR S&P 500 ETF"},
-    {"symbol": "QQQ", "name": "Invesco QQQ Trust"}, {"symbol": "DIA", "name": "SPDR Dow Jones Industrial ETF"},
-    {"symbol": "IWM", "name": "iShares Russell 2000 ETF"}, {"symbol": "GLD", "name": "SPDR Gold Shares"},
-    {"symbol": "TLT", "name": "iShares 20+ Year Treasury Bond ETF"}, {"symbol": "VIX", "name": "CBOE Volatility Index"},
-    {"symbol": "BTC-USD", "name": "Bitcoin USD"}, {"symbol": "ETH-USD", "name": "Ethereum USD"}
+    {"symbol": "GOOGL", "name": "Alphabet Inc. Class A"}, {"symbol": "NVDA", "name": "NVIDIA Corp."},
+    {"symbol": "TSLA", "name": "Tesla Inc."}, {"symbol": "AMD", "name": "Advanced Micro Devices"}
 ]
-
 
 @app.get("/")
 async def serve_home():
     return FileResponse('index.html')
 
-
 @app.get("/api/tickers")
 def search_tickers(q: str = ""):
     q = q.upper().strip()
     if not q:
-        return TICKERS_DB[:60]
+        return TICKERS_DB[:10]
     matches = [t for t in TICKERS_DB if t["symbol"].startswith(q) or q in t["name"].upper()]
     return matches[:25]
-
 
 @app.get("/api/watchlist")
 def get_watchlist():
     return watchlist
-
 
 @app.post("/api/watchlist")
 def add_to_watchlist(ticker: str = Query(...)):
@@ -556,14 +474,12 @@ def add_to_watchlist(ticker: str = Query(...)):
         watchlist.append(ticker)
     return watchlist
 
-
 @app.delete("/api/watchlist/{ticker}")
 def remove_from_watchlist(ticker: str):
     global watchlist
     ticker = ticker.upper().strip()
     watchlist = [t for t in watchlist if t != ticker]
     return watchlist
-
 
 @app.get("/api/stats")
 def get_stats(ticker: str = "NVDA"):
@@ -598,7 +514,6 @@ def get_stats(ticker: str = "NVDA"):
         "put_score": put_score,
         "put_call_ratio": round(put_score / max(call_score, 1), 2)
     }
-
 
 @app.get("/api/indicators")
 def get_indicators(ticker: str = "NVDA", timeframe: str = "1d"):
@@ -651,7 +566,6 @@ def get_indicators(ticker: str = "NVDA", timeframe: str = "1d"):
         "r2": resistances[1]["level"] if len(resistances) > 1 else None,
     }
 
-
 @app.get("/api/chart-data")
 def get_chart_data(ticker: str = "NVDA", timeframe: str = "1d"):
     cfg = TIMEFRAME_CONFIG.get(timeframe, TIMEFRAME_CONFIG["1d"])
@@ -694,16 +608,14 @@ def get_chart_data(ticker: str = "NVDA", timeframe: str = "1d"):
         })
     return data
 
-
 @app.get("/api/analysis")
 def get_analysis(ticker: str = "NVDA"):
     return {
         "summary": f"🤖 [AI Real-Time Evaluation: {ticker}]\nระบบประมวลผลแยกสาย Call Option และ Put Option เป็นอิสระเรียบร้อยแล้ว ดาต้าพร้อมเสิร์ฟบนเกจวัดความเสี่ยง"
     }
 
-
 # ---------------------------------------------------------------------------
-# 👜 Smart Option Pocket Endpoints (คำนวณกำไรขาดทุนถูกต้องตามกลไกตลาดออปชัน)
+# 👜 Smart Option Pocket Endpoints
 # ---------------------------------------------------------------------------
 @app.get("/api/positions")
 def get_positions():
@@ -712,25 +624,21 @@ def get_positions():
         strike = float(pos["strike_price"])
         opt_type = pos["option_type"].upper()  
         exp = pos["expiration"]                
-        premium_paid = float(pos["premium_paid"])
+        premium_paid = float(pos["premium_paid"]) # ราคาพรีเมียมต่อหุ้น (เช่น 1.38)
         qty = int(pos["quantity"])
-
+        iv = float(pos.get("iv", 0.0))
+        
         curr_underlying = get_base_price(tk)
-        total_cost = premium_paid * 100 * qty
         current_premium = None
 
-        # --- ขั้นที่ 1: ดึงราคาพรีเมียมจริงของออปชันสัญญาแม่จากตลาดหลักทรัพย์ ---
+        # 1. ลองดึงราคาจริงจาก API
         try:
-            stock = yf.Ticker(tk)
-            chain = stock.option_chain(exp)
+            chain = yf.Ticker(tk).option_chain(exp)
             df = chain.calls if opt_type == "CALL" else chain.puts
-            
             opt_row = df[df['strike'] == strike]
             if not opt_row.empty:
                 row = opt_row.iloc[0]
-                bid = row.get('bid')
-                ask = row.get('ask')
-                # ใช้ค่าเฉลี่ย Bid/Ask (Mid Price) เพื่อสะท้อนราคาตลาดยุติธรรมที่สุด
+                bid, ask = row.get('bid'), row.get('ask')
                 if bid and ask and bid > 0 and ask > 0:
                     current_premium = (bid + ask) / 2
                 else:
@@ -738,32 +646,33 @@ def get_positions():
         except Exception:
             pass  
 
-        # --- ขั้นที่ 2: ประมวลผล P&L ---
-        if current_premium is not None and current_premium > 0:
-            # ใช้ราคาพรีเมียมจาก Real Market Chain
-            pnl = (current_premium - premium_paid) * 100 * qty
-        else:
-            # Fallback หาก API หนาแน่น ดึง Chain ไม่ทัน จะคิดจากมูลค่าที่แท้จริง (Intrinsic Value)
-            if opt_type == "CALL":
-                intrinsic_value = max(0.0, curr_underlying - strike)
-            else:
-                intrinsic_value = max(0.0, strike - curr_underlying)
+        # 2. ถ้า API ล่ม หรือหาไม่เจอ -> ใช้ Black-Scholes (ถ้าใส่ IV มา)
+        if current_premium is None or current_premium <= 0:
+            if iv > 0:
+                try:
+                    exp_date = datetime.strptime(exp, "%Y-%m-%d")
+                    days_to_exp = (exp_date - datetime.now()).days
+                    T = max(days_to_exp, 0) / 365.0
+                    current_premium = black_scholes(curr_underlying, strike, T, 0.05, iv / 100.0, opt_type)
+                except Exception:
+                    pass
             
-            pnl = (intrinsic_value - premium_paid) * 100 * qty
-            
-            # กฎเหล็กคนซื้อ Option: ขาดทุนสูงสุดต้องไม่เกินค่าพรีเมียมที่จ่าย (Risk Cap)
-            if pnl < -total_cost:
-                pnl = -total_cost
+            # 3. Fallback สุดท้ายคือ Intrinsic Value
+            if current_premium is None or current_premium <= 0:
+                if opt_type == "CALL": current_premium = max(0.01, curr_underlying - strike)
+                else: current_premium = max(0.01, strike - curr_underlying)
 
+        # คำนวณ PnL โดย (ราคาพรีเมียมปัจจุบัน - ราคาพรีเมียมตอนซื้อ) * 100 * จำนวนสัญญา
+        pnl = (current_premium - premium_paid) * 100 * qty
+        total_cost = premium_paid * 100 * qty
         pnl_percent = (pnl / total_cost) * 100 if total_cost > 0 else 0
 
-        # แนบข้อมูลกลับไปอัปเดตบนหน้า UI Dashboard
         pos["current_underlying_price"] = round(curr_underlying, 2)
-        pos["current_option_premium"] = round(current_premium, 2) if current_premium else "N/A (Intrinsic Calc)"
+        pos["current_option_premium"] = round(current_premium, 2)
         pos["pnl"] = round(pnl, 2)
         pos["pnl_percent"] = round(pnl_percent, 2)
+        
     return logged_positions
-
 
 @app.post("/api/positions")
 def add_position(pos: PositionModel):
@@ -779,39 +688,29 @@ def add_position(pos: PositionModel):
     send_line_alert(msg)
     return new_pos
 
-
 @app.delete("/api/positions/{pos_id}")
 def close_position(pos_id: int):
     global logged_positions
     pos = next((p for p in logged_positions if p["id"] == pos_id), None)
-    if pos:
-        msg = f"\n🔴 [ปิดออปชัน]\nหุ้น: {pos['ticker']} ({pos['option_type']})\nP&L: ${pos['pnl']} ({pos['pnl_percent']}%)"
-        send_line_alert(msg)
+    if pos: send_line_alert(f"\n🔴 [ปิดออปชัน]\nหุ้น: {pos['ticker']} ({pos['option_type']})\nP&L: ${pos['pnl']}")
     logged_positions = [p for p in logged_positions if p["id"] != pos_id]
     return {"status": "success"}
-
 
 @app.websocket("/ws/price/{ticker}")
 async def websocket_endpoint(websocket: WebSocket, ticker: str):
     await websocket.accept()
     ticker = ticker.upper()
     current_price = await asyncio.to_thread(get_base_price, ticker)
-
     try:
         tick = 0
         while True:
             session = get_market_session()
-            if session == "REGULAR":
-                if tick % 3 == 0:
-                    live = await asyncio.to_thread(get_live_1m_price, ticker)
-                    if live:
-                        current_price = live
+            if session == "REGULAR" and tick % 3 == 0:
+                live = await asyncio.to_thread(get_live_1m_price, ticker)
+                if live: current_price = live
             live_prices[ticker] = current_price
-
             await websocket.send_text(json.dumps({
-                "ticker": ticker,
-                "price": round(current_price, 2),
-                "market_session": session
+                "ticker": ticker, "price": round(current_price, 2), "market_session": session
             }))
             tick += 1
             await asyncio.sleep(1)
@@ -819,34 +718,8 @@ async def websocket_endpoint(websocket: WebSocket, ticker: str):
         pass
 
 # ---------------------------------------------------------------------------
-# 🔮 Options What-If Simulator (Black-Scholes Model)
+# 🔮 What-If Simulator API
 # ---------------------------------------------------------------------------
-def norm_cdf(x):
-    """ฟังก์ชันสะสมความน่าจะเป็นแบบปกติ (Standard Normal CDF)"""
-    return (1.0 + math.erf(x / math.sqrt(2.0))) / 2.0
-
-def black_scholes(S, K, T, r, sigma, option_type="CALL"):
-    """
-    S: ราคาหุ้นเป้าหมาย (Target Price)
-    K: ราคา Strike
-    T: เวลาที่เหลือจนกว่าจะหมดอายุ (เป็นสัดส่วนของปี เช่น 30 วัน = 30/365)
-    r: อัตราดอกเบี้ยปลอดความเสี่ยง (ใช้ 0.05 หรือ 5%)
-    sigma: ค่าความผันผวนแฝง (IV - Implied Volatility)
-    """
-    if T <= 0:
-        return max(0.0, S - K) if option_type == "CALL" else max(0.0, K - S)
-    
-    # ป้องกันกรณี IV เป็น 0
-    sigma = max(sigma, 0.001) 
-    
-    d1 = (math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
-    d2 = d1 - sigma * math.sqrt(T)
-    
-    if option_type == "CALL":
-        return S * norm_cdf(d1) - K * math.exp(-r * T) * norm_cdf(d2)
-    else:
-        return K * math.exp(-r * T) * norm_cdf(-d2) - S * norm_cdf(-d1)
-
 class SimulatorModel(BaseModel):
     strike_price: float
     option_type: str
@@ -871,11 +744,12 @@ def simulate_option(data: SimulatorModel):
         r = 0.05  # กำหนด Risk-free rate ที่ 5%
         sigma = data.current_iv / 100.0  # แปลง IV จากเปอร์เซ็นต์เป็นทศนิยม
 
-        # คำนวณราคาพรีเมียมตามเป้าหมาย (รับรู้ Time Decay อัตโนมัติจากค่า T ที่ลดลง)
+        # Black-Scholes หัก Time Decay (Theta) 
         simulated_premium = black_scholes(data.target_price, data.strike_price, T, r, sigma, data.option_type)
         
         # คำนวณกำไร/ขาดทุน
         pnl_per_share = simulated_premium - data.premium_paid
+        pnl_total = pnl_per_share * 100  # กำไรสุทธิต่อ 1 สัญญา (100 หุ้น)
         pnl_percent = (pnl_per_share / data.premium_paid) * 100 if data.premium_paid > 0 else 0
         
         # คำนวณจุดคุ้มทุน (Break-even)
@@ -883,13 +757,13 @@ def simulate_option(data: SimulatorModel):
 
         return {
             "simulated_premium": round(simulated_premium, 2),
-            "pnl_per_share": round(pnl_per_share, 2),
+            "pnl_total": round(pnl_total, 2),
             "pnl_percent": round(pnl_percent, 2),
             "days_remaining": days_to_exp,
             "break_even": round(break_even, 2)
         }
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": f"Backend Error: {str(e)}"}
 
 if __name__ == "__main__":
     import uvicorn
