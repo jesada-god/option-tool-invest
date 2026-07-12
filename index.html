@@ -890,7 +890,6 @@
             }
         });
         const candleSeries = chart.addCandlestickSeries({ upColor: '#00c57f', downColor: '#ff3b30', borderVisible: false });
-        const leftDummySeries = chart.addLineSeries({ priceScaleId: 'left', color: 'transparent', lastValueVisible: false, priceLineVisible: false });
 
         // --- 📊 [แก้ไขโครงสร้าง] ปรับเปลี่ยนจากชาร์ต RSI เดิม ให้เป็น Volume Chart ---
         const volumeContainer = document.getElementById('volumechart');
@@ -1083,7 +1082,6 @@ ${t}
                 }));
 
                 candleSeries.setData(candles);
-                leftDummySeries.setData(lines);
                 volumeSeries.setData(volumes); // นำข้อมูลเข้าสู่หน้าอินดิเคเตอร์ตัวใหม่
 
                 // 3. Fetch Indicators (S/R)
@@ -1138,7 +1136,7 @@ ${t}
                 const resColors = ['#ff8a80', '#ff5c4d', '#ff3b30'];
                 const supColors = ['#69f0ae', '#2ee08a', '#00c57f'];
                 const widths = [4, 3, 3];
-                const f = (p, c, w, t) => leftDummySeries.createPriceLine({ price: p, color: c, lineWidth: w, lineStyle: LightweightCharts.LineStyle.Solid, title: t });
+                const f = (p, c, w, t) => candleSeries.createPriceLine({ price: p, color: c, lineWidth: w, lineStyle: LightweightCharts.LineStyle.Solid, title: t });
 
                 srData.resistance.forEach((r, i) => srLines.push(f(r.level, resColors[i] || '#ff3b30', widths[i] || 3, `${r.label} แนวต้าน`)));
                 srData.support.forEach((s, i) => srLines.push(f(s.level, supColors[i] || '#00c57f', widths[i] || 3, `${s.label} แนวรับ`)));
@@ -1146,7 +1144,7 @@ ${t}
                 isSRVisible = true; document.getElementById('toggle-sr').classList.add('active');
             }
         }
-        function removeSRLines() { srLines.forEach(l => leftDummySeries.removePriceLine(l)); srLines = []; isSRVisible = false; document.getElementById('toggle-sr').classList.remove('active'); }
+        function removeSRLines() { srLines.forEach(l => candleSeries.removePriceLine(l)); srLines = []; isSRVisible = false; document.getElementById('toggle-sr').classList.remove('active'); }
 
         // --- 💼 Portfolio Engine Via API ---
         async function fetchPortfolio() {
@@ -1252,7 +1250,6 @@ ${t}
                     if (currentLivePrice > lastData.high) lastData.high = currentLivePrice;
                     if (currentLivePrice < lastData.low) lastData.low = currentLivePrice;
                     candleSeries.update(lastData);
-                    leftDummySeries.update({ time: lastData.time, value: currentLivePrice });
                 }
 
                 // อัปเดตราคา P&L แบบ Real-time
