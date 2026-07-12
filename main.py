@@ -20,6 +20,7 @@ watchlist = ["NVDA", "AAPL", "TSLA", "AMD"]
 logged_positions = []
 live_prices = {}
 
+
 class PositionModel(BaseModel):
     ticker: str
     strike_price: float
@@ -27,8 +28,8 @@ class PositionModel(BaseModel):
     expiration: str
     premium_paid: float
     quantity: int
-    iv: float = 0.0      # เพิ่มรองรับ IV
-    delta: float = 0.0   # เพิ่มรองรับ Delta
+    iv: float = 0.0 # เพิ่มรองรับ IV
+    delta: float = 0.0 # เพิ่มรองรับ Delta
 
 
 def send_line_alert(message: str):
@@ -59,13 +60,13 @@ def black_scholes(S, K, T, r, sigma, option_type="CALL"):
     """
     if T <= 0:
         return max(0.0, S - K) if option_type == "CALL" else max(0.0, K - S)
-    
+
     # ป้องกันกรณี IV เป็น 0
-    sigma = max(sigma, 0.001) 
-    
+    sigma = max(sigma, 0.001)
+
     d1 = (math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
     d2 = d1 - sigma * math.sqrt(T)
-    
+
     if option_type == "CALL":
         return S * norm_cdf(d1) - K * math.exp(-r * T) * norm_cdf(d2)
     else:
@@ -77,7 +78,7 @@ def black_scholes(S, K, T, r, sigma, option_type="CALL"):
 def get_market_session() -> str:
     """Returns 'PRE', 'REGULAR', 'POST' or 'CLOSED' based on real NY time."""
     now_ny = datetime.now(ZoneInfo("America/New_York"))
-    if now_ny.weekday() >= 5:  # เสาร์-อาทิตย์ ตลาดปิด
+    if now_ny.weekday() >= 5: # เสาร์-อาทิตย์ ตลาดปิด
         return "CLOSED"
     t = now_ny.time()
     if dtime(4, 0) <= t < dtime(9, 30):
@@ -102,39 +103,26 @@ def get_price_bundle(ticker: str) -> dict:
     post_price = info.get('postMarketPrice')
 
     # ⭐ [แก้ไขเพิ่มเติม] ระบบดึงราคา Pre-Market / Post-Market สำรองอย่างแม่นยำกรณีค่าใน info เป็น None
-    # หมายเหตุ: preMarketPrice ของ Yahoo มักถูกล้างค่ากลับเป็น None ทันทีที่พ้นช่วง Pre-Market จริง
-    # (ต่างจาก postMarketPrice ที่มักค้างค่าล่าสุดไว้ข้ามคืน) จึงต้องพึ่ง fallback จากข้อมูลย้อนหลังบ่อยกว่า
-    def _fill_from_history(period: str, interval: str):
-        nonlocal pre_price, post_price
+    if not pre_price or not post_price:
         try:
-            h = stock.history(period=period, interval=interval, prepost=True)
+            hist_1m = stock.history(period="2d", interval="5m", prepost=True)
+            if not hist_1m.empty:
+                if hist_1m.index.tz is None:
+                    hist_1m = hist_1m.tz_localize("UTC").tz_convert("America/New_York")
+                else:
+                    hist_1m = hist_1m.tz_convert("America/New_York")
+
+                if not pre_price:
+                    pre_df = hist_1m.between_time("04:00", "09:29")
+                    if not pre_df.empty:
+                        pre_price = float(pre_df['Close'].iloc[-1])
+
+                if not post_price:
+                    post_df = hist_1m.between_time("16:00", "20:00")
+                    if not post_df.empty:
+                        post_price = float(post_df['Close'].iloc[-1])
         except Exception:
-            return
-        if h.empty:
-            return
-        if h.index.tz is None:
-            h = h.tz_localize("UTC").tz_convert("America/New_York")
-        else:
-            h = h.tz_convert("America/New_York")
-
-        if not pre_price:
-            pre_df = h.between_time("04:00", "09:29")
-            if not pre_df.empty:
-                pre_price = float(pre_df['Close'].iloc[-1])
-
-        if not post_price:
-            post_df = h.between_time("16:00", "20:00")
-            if not post_df.empty:
-                post_price = float(post_df['Close'].iloc[-1])
-
-    if not pre_price or not post_price:
-        # ระดับ 1: ข้อมูล 5 นาที ย้อนหลัง 5 วัน (ครอบคลุมวันหยุดสุดสัปดาห์ / วันหยุดยาว)
-        _fill_from_history("5d", "5m")
-
-    if not pre_price or not post_price:
-        # ระดับ 2: ถ้ายังไม่เจอ (บางหุ้นสภาพคล่องต่ำ Yahoo ไม่มีข้อมูล prepost แบบ 5 นาที)
-        # ลองช่วงเวลาที่กว้างขึ้นแบบ 15 นาที ย้อนหลัง 1 เดือน
-        _fill_from_history("1mo", "15m")
+            pass
 
     last_close = reg_price or prev_close
     if not last_close:
@@ -154,7 +142,7 @@ def get_price_bundle(ticker: str) -> dict:
         current_price = pre_price or last_close
     elif session == "POST":
         current_price = post_price or reg_price
-    else:  
+    else:
         current_price = last_close
 
     live_prices[ticker] = current_price
@@ -206,7 +194,7 @@ def calculate_rsi(series, period=14):
 def calculate_option_scores(ticker: str, info: dict):
     call_technical_score = 50.0
     put_technical_score = 50.0
-    
+
     try:
         hist = yf.Ticker(ticker).history(period="6mo", interval="1d")
         if not hist.empty and len(hist) > 20:
@@ -219,29 +207,29 @@ def calculate_option_scores(ticker: str, info: dict):
 
             if 50 <= last_rsi <= 70:
                 call_rsi_score = 88.0
-            elif last_rsi > 70:  
+            elif last_rsi > 70:
                 call_rsi_score = 75.0
-            elif last_rsi < 30:  
+            elif last_rsi < 30:
                 call_rsi_score = 65.0
             else:
                 call_rsi_score = last_rsi
 
             if 30 <= last_rsi <= 50:
                 put_rsi_score = 88.0
-            elif last_rsi < 30:  
+            elif last_rsi < 30:
                 put_rsi_score = 75.0
-            elif last_rsi > 70:  
+            elif last_rsi > 70:
                 put_rsi_score = 65.0
             else:
                 put_rsi_score = 100.0 - last_rsi
 
-            if last_close > ema20 > ema50:         
+            if last_close > ema20 > ema50:
                 call_trend_score, put_trend_score = 90.0, 10.0
-            elif last_close > ema20 and ema20 <= ema50:  
+            elif last_close > ema20 and ema20 <= ema50:
                 call_trend_score, put_trend_score = 70.0, 30.0
-            elif last_close < ema20 < ema50:       
+            elif last_close < ema20 < ema50:
                 call_trend_score, put_trend_score = 10.0, 90.0
-            elif last_close < ema20 and ema20 >= ema50:  
+            elif last_close < ema20 and ema20 >= ema50:
                 call_trend_score, put_trend_score = 30.0, 70.0
             else:
                 call_trend_score, put_trend_score = 50.0, 50.0
@@ -254,7 +242,7 @@ def calculate_option_scores(ticker: str, info: dict):
     call_fundamental_score = 50.0
     put_fundamental_score = 50.0
     try:
-        rec_mean = info.get('recommendationMean')       
+        rec_mean = info.get('recommendationMean')
         target = info.get('targetMeanPrice')
         current = info.get('currentPrice') or info.get('regularMarketPrice')
         rev_growth = info.get('revenueGrowth')
@@ -294,7 +282,7 @@ def calculate_option_scores(ticker: str, info: dict):
     return call_score, put_score
 
 def calculate_fair_value(info: dict, current_price: float):
-    methods = []   
+    methods = []
     target = info.get('targetMeanPrice')
     if target and float(target) > 0:
         methods.append((float(target), 0.5, "analyst_target"))
@@ -367,14 +355,14 @@ BAR_SECONDS = {
 }
 
 TIMEFRAME_CONFIG = {
-    "1m":   {"period": "5d",  "interval": "1m"},
-    "5m":   {"period": "1mo", "interval": "5m"},
-    "10m":  {"period": "1mo", "interval": "5m",  "resample": "10min"},
-    "15m":  {"period": "1mo", "interval": "15m"},
-    "1h":   {"period": "3mo", "interval": "60m"},
-    "4h":   {"period": "6mo", "interval": "60m", "resample": "4h"},
-    "1d":   {"period": "1y",  "interval": "1d"},
-    "week": {"period": "5y",  "interval": "1wk"},
+    "1m": {"period": "5d", "interval": "1m"},
+    "5m": {"period": "1mo", "interval": "5m"},
+    "10m": {"period": "1mo", "interval": "5m", "resample": "10min"},
+    "15m": {"period": "1mo", "interval": "15m"},
+    "1h": {"period": "3mo", "interval": "60m"},
+    "4h": {"period": "6mo", "interval": "60m", "resample": "4h"},
+    "1d": {"period": "1y", "interval": "1d"},
+    "week": {"period": "5y", "interval": "1wk"},
 }
 
 def calculate_pivot_levels(h: float, l: float, c: float) -> dict:
@@ -590,11 +578,11 @@ def get_indicators(ticker: str = "NVDA", timeframe: str = "1d"):
         "ticker": ticker,
         "current_price": round(current_price, 2),
         "timeframe_requested": timeframe,
-        "basis_timeframe": basis,          
+        "basis_timeframe": basis,
         "pivot": levels["pivot"],
-        "support": supports,               
-        "resistance": resistances,         
-        "closest_alert": closest,          
+        "support": supports,
+        "resistance": resistances,
+        "closest_alert": closest,
         "s1": supports[0]["level"] if len(supports) > 0 else None,
         "s2": supports[1]["level"] if len(supports) > 1 else None,
         "r1": resistances[0]["level"] if len(resistances) > 0 else None,
@@ -657,12 +645,12 @@ def get_positions():
     for pos in logged_positions:
         tk = pos["ticker"]
         strike = float(pos["strike_price"])
-        opt_type = pos["option_type"].upper()  
-        exp = pos["expiration"]                
+        opt_type = pos["option_type"].upper()
+        exp = pos["expiration"]
         premium_paid = float(pos["premium_paid"]) # ราคาพรีเมียมต่อหุ้น (เช่น 1.38)
         qty = int(pos["quantity"])
         iv = float(pos.get("iv", 0.0))
-        
+
         curr_underlying = get_base_price(tk)
         current_premium = None
 
@@ -679,7 +667,7 @@ def get_positions():
                 else:
                     current_premium = row.get('lastPrice')
         except Exception:
-            pass  
+            pass
 
         # 2. ถ้า API ล่ม หรือหาไม่เจอ -> ใช้ Black-Scholes (ถ้าใส่ IV มา)
         if current_premium is None or current_premium <= 0:
@@ -691,11 +679,11 @@ def get_positions():
                     current_premium = black_scholes(curr_underlying, strike, T, 0.05, iv / 100.0, opt_type)
                 except Exception:
                     pass
-            
-            # 3. Fallback สุดท้ายคือ Intrinsic Value
-            if current_premium is None or current_premium <= 0:
-                if opt_type == "CALL": current_premium = max(0.01, curr_underlying - strike)
-                else: current_premium = max(0.01, strike - curr_underlying)
+
+        # 3. Fallback สุดท้ายคือ Intrinsic Value
+        if current_premium is None or current_premium <= 0:
+            if opt_type == "CALL": current_premium = max(0.01, curr_underlying - strike)
+            else: current_premium = max(0.01, strike - curr_underlying)
 
         # คำนวณ PnL โดย (ราคาพรีเมียมปัจจุบัน - ราคาพรีเมียมตอนซื้อ) * 100 * จำนวนสัญญา
         pnl = (current_premium - premium_paid) * 100 * qty
@@ -706,7 +694,7 @@ def get_positions():
         pos["current_option_premium"] = round(current_premium, 2)
         pos["pnl"] = round(pnl, 2)
         pos["pnl_percent"] = round(pnl_percent, 2)
-        
+
     return logged_positions
 
 @app.post("/api/positions")
@@ -770,23 +758,23 @@ def simulate_option(data: SimulatorModel):
         # คำนวณวันหมดอายุ และจำนวนวันที่เหลือจนถึงเป้าหมาย
         exp_date = datetime.strptime(data.expiration, "%Y-%m-%d")
         tgt_date = datetime.strptime(data.target_date, "%Y-%m-%d")
-        
+
         days_to_exp = (exp_date - tgt_date).days
         if days_to_exp < 0:
             return {"error": "วันที่ตั้งเป้าหมาย ต้องไม่เกินวันหมดอายุของสัญญา!"}
-        
-        T = days_to_exp / 365.0
-        r = 0.05  # กำหนด Risk-free rate ที่ 5%
-        sigma = data.current_iv / 100.0  # แปลง IV จากเปอร์เซ็นต์เป็นทศนิยม
 
-        # Black-Scholes หัก Time Decay (Theta) 
+        T = days_to_exp / 365.0
+        r = 0.05 # กำหนด Risk-free rate ที่ 5%
+        sigma = data.current_iv / 100.0 # แปลง IV จากเปอร์เซ็นต์เป็นทศนิยม
+
+        # Black-Scholes หัก Time Decay (Theta)
         simulated_premium = black_scholes(data.target_price, data.strike_price, T, r, sigma, data.option_type)
-        
+
         # คำนวณกำไร/ขาดทุน
         pnl_per_share = simulated_premium - data.premium_paid
-        pnl_total = pnl_per_share * 100  # กำไรสุทธิต่อ 1 สัญญา (100 หุ้น)
+        pnl_total = pnl_per_share * 100 # กำไรสุทธิต่อ 1 สัญญา (100 หุ้น)
         pnl_percent = (pnl_per_share / data.premium_paid) * 100 if data.premium_paid > 0 else 0
-        
+
         # คำนวณจุดคุ้มทุน (Break-even)
         break_even = data.strike_price + data.premium_paid if data.option_type == "CALL" else data.strike_price - data.premium_paid
 
@@ -799,6 +787,7 @@ def simulate_option(data: SimulatorModel):
         }
     except Exception as e:
         return {"error": f"Backend Error: {str(e)}"}
+
 
 if __name__ == "__main__":
     import uvicorn

@@ -735,7 +735,8 @@
     <div class="portfolio-panel">
         <h3 style="margin:0; font-size:16px; color:white;">💼 กระเป๋าพอร์ตสัญญาออปชันที่ถืออยู่ (Real-Time P&L Engine)
         </h3>
-        <p style="font-size:12px; color:var(--text-muted); margin: 6px 0 0 0;">(คำเตือน: ช่องราคาพรีเมียม ให้กรอก "ราคาต่อหุ้น" เช่น 1.38 ระบบจะคูณ 100 ให้อัตโนมัติ)</p>
+        <p style="font-size:12px; color:var(--text-muted); margin: 6px 0 0 0;">(คำเตือน: ช่องราคาพรีเมียม ให้กรอก
+            "ราคาต่อหุ้น" เช่น 1.38 ระบบจะคูณ 100 ให้อัตโนมัติ)</p>
 
         <form id="pos-form" onsubmit="submitPosition(event)">
             <div class="form-grid">
@@ -761,7 +762,8 @@
                         <th>ประเภท</th>
                         <th>Strike</th>
                         <th>หมดอายุ</th>
-                        <th>พรีเมียมที่จ่าย<br><span style="font-size:10px; color:var(--text-muted);">(ต่อหุ้น)</span></th>
+                        <th>พรีเมียมที่จ่าย<br><span style="font-size:10px; color:var(--text-muted);">(ต่อหุ้น)</span>
+                        </th>
                         <th>สัญญา</th>
                         <th>IV / Delta</th>
                         <th>หุ้นแม่ปัจจุบัน</th>
@@ -776,9 +778,11 @@
     </div>
 
     <div class="portfolio-panel" style="margin-top: 20px; border-top: 3px solid var(--blue);">
-        <h3 style="margin:0; font-size:16px; color:var(--blue);">🔮 What-If Simulator (จำลองเป้าหมาย & คำนวณ Time Decay)</h3>
-        <p style="font-size:12px; color:var(--text-muted); margin: 6px 0 15px 0;">ใส่ค่า IV เพื่อให้โมเดล Black-Scholes หักลบค่าเสื่อมเวลา (Theta) อัตโนมัติตามวันที่คุณต้องการ</p>
-        
+        <h3 style="margin:0; font-size:16px; color:var(--blue);">🔮 What-If Simulator (จำลองเป้าหมาย & คำนวณ Time Decay)
+        </h3>
+        <p style="font-size:12px; color:var(--text-muted); margin: 6px 0 15px 0;">ใส่ค่า IV เพื่อให้โมเดล Black-Scholes
+            หักลบค่าเสื่อมเวลา (Theta) อัตโนมัติตามวันที่คุณต้องการ</p>
+
         <div class="form-grid">
             <input type="number" id="sim-strike" placeholder="Strike Price ($)" step="0.01">
             <select id="sim-type">
@@ -790,10 +794,12 @@
             <input type="number" id="sim-iv" placeholder="IV (%) เช่น 65.5" step="0.1">
             <input type="number" id="sim-target-price" placeholder="ราคาหุ้นแม่เป้าหมาย ($)" step="0.01">
             <input type="date" id="sim-target-date" placeholder="วันที่คาดว่าจะถึงเป้า" title="วันที่คาดว่าจะถึงเป้า">
-            <button onclick="runSimulator()" class="btn-submit" style="background:var(--blue); color:white;">คำนวณผลลัพธ์</button>
+            <button onclick="runSimulator()" class="btn-submit"
+                style="background:var(--blue); color:white;">คำนวณผลลัพธ์</button>
         </div>
 
-        <div id="sim-result" style="margin-top: 15px; font-size: 14px; display: none; padding: 15px; background: #1c2030; border-radius: 6px; border: 1px solid var(--panel-border);">
+        <div id="sim-result"
+            style="margin-top: 15px; font-size: 14px; display: none; padding: 15px; background: #1c2030; border-radius: 6px; border: 1px solid var(--panel-border);">
             <!-- ผลลัพธ์จะแสดงตรงนี้ -->
         </div>
     </div>
@@ -816,7 +822,7 @@
         let isChangingData = false;
         let currentLivePrice = 0;
         let watchlist = [];
-        let ws = null; 
+        let ws = null;
         let searchDebounce = null;
 
         const searchInput = document.getElementById('search-input');
@@ -956,11 +962,11 @@
         function renderWatchlist() {
             const container = document.getElementById('watchlist-row');
             container.innerHTML = watchlist.map(t => `
-                <div class="watchlist-tag ${t === currentTicker ? 'active' : ''}" onclick="switchStock('${t}')">
-                    ${t}
-                    <span class="remove-btn" onclick="event.stopPropagation(); deleteWatchlist('${t}')">×</span>
-                </div>
-            `).join('');
+<div class="watchlist-tag ${t === currentTicker ? 'active' : ''}" onclick="switchStock('${t}')">
+${t}
+<span class="remove-btn" onclick="event.stopPropagation(); deleteWatchlist('${t}')">×</span>
+</div>
+`).join('');
         }
 
         function setFairValueDisplay(fairValue, upsidePct) {
@@ -987,13 +993,13 @@
                 const near = item.distance_pct !== null && item.distance_pct !== undefined && item.distance_pct <= 1.5;
                 const labelColor = type === 'resistance' ? 'var(--red)' : 'var(--green)';
                 return `<div class="sr-row ${type} ${near ? 'near' : ''}">
-                    <span class="sr-label" style="color:${labelColor}">${item.label}</span>
-                    <span class="sr-price">$${item.level.toFixed(2)}</span>
-                    <span class="sr-eta">${item.distance_pct}%${item.eta ? ' · ' + item.eta : ''}</span>
-                </div>`;
+<span class="sr-label" style="color:${labelColor}">${item.label}</span>
+<span class="sr-price">$${item.level.toFixed(2)}</span>
+<span class="sr-eta">${item.distance_pct}%${item.eta ? ' · ' + item.eta : ''}</span>
+</div>`;
             };
 
-            const resistancesDesc = [...srData.resistance].reverse(); 
+            const resistancesDesc = [...srData.resistance].reverse();
             let html = resistancesDesc.map(r => rowHtml(r, 'resistance')).join('');
             html += `<div class="sr-current-marker">💲 ราคาปัจจุบัน $${srData.current_price.toFixed(2)}</div>`;
             html += srData.support.map(s => rowHtml(s, 'support')).join('');
@@ -1068,10 +1074,10 @@
 
                 const candles = chartData.map(d => ({ time: d.time, open: d.open, high: d.high, low: d.low, close: d.close }));
                 const lines = chartData.map(d => ({ time: d.time, value: d.close }));
-                
+
                 // ⭐ [แก้ไขฟีดข้อมูล] แปลงข้อมูลจัดส่งเข้า Volume Histogram แทนกราฟเส้นแบบเดิม
-                const volumes = chartData.map(d => ({ 
-                    time: d.time, 
+                const volumes = chartData.map(d => ({
+                    time: d.time,
                     value: d.volume,
                     color: d.close >= d.open ? '#00c57f' : '#ff3b30' // หากปิดบวกให้แท่งวอลลุ่มสีเขียว ปิดลบสีแดง
                 }));
@@ -1129,9 +1135,9 @@
             if (isSRVisible) { removeSRLines(); }
             else {
                 if (!srData) return;
-                const resColors = ['#ff8a80', '#ff5c4d', '#ff3b30']; 
-                const supColors = ['#69f0ae', '#2ee08a', '#00c57f']; 
-                const widths = [4, 3, 3]; 
+                const resColors = ['#ff8a80', '#ff5c4d', '#ff3b30'];
+                const supColors = ['#69f0ae', '#2ee08a', '#00c57f'];
+                const widths = [4, 3, 3];
                 const f = (p, c, w, t) => leftDummySeries.createPriceLine({ price: p, color: c, lineWidth: w, lineStyle: LightweightCharts.LineStyle.Solid, title: t });
 
                 srData.resistance.forEach((r, i) => srLines.push(f(r.level, resColors[i] || '#ff3b30', widths[i] || 3, `${r.label} แนวต้าน`)));
@@ -1171,20 +1177,20 @@
                 const sign = pnl >= 0 ? '+' : '';
 
                 return `
-                <tr>
-                    <td style="font-weight:bold; color:white;">${p.ticker}</td>
-                    <td style="color:${p.option_type === 'CALL' ? 'var(--green)' : 'var(--red)'}; font-weight:bold;">${p.option_type}</td>
-                    <td>$${p.strike_price}</td>
-                    <td>${p.expiration}</td>
-                    <td>$${parseFloat(p.premium_paid).toFixed(2)}</td>
-                    <td>${p.quantity}</td>
-                    <td style="color:var(--text-muted); font-size:12px;">${ivDisp} / ${deltaDisp}</td>
-                    <td id="table-underlying-${p.id}">$${currentUPrice.toFixed(2)}</td>
-                    <td id="table-sellprice-${p.id}" style="font-weight:bold; color:var(--gold);">$${currentSellPrice.toFixed(2)}</td>
-                    <td id="table-pnl-${p.id}" class="pnl-cell" style="color:${color}">${sign}$${pnl.toFixed(2)} <span style="font-size:12px;">(${sign}${pnlPercent.toFixed(2)}%)</span></td>
-                    <td><button style="background:rgba(255,59,48,0.1); color:var(--red); border:1px solid var(--red); padding:6px 10px; border-radius:4px; font-weight:bold; cursor:pointer;" onclick="closePosition(${p.id})">ปิดสัญญา</button></td>
-                </tr>
-            `}).join('');
+<tr>
+<td style="font-weight:bold; color:white;">${p.ticker}</td>
+<td style="color:${p.option_type === 'CALL' ? 'var(--green)' : 'var(--red)'}; font-weight:bold;">${p.option_type}</td>
+<td>$${p.strike_price}</td>
+<td>${p.expiration}</td>
+<td>$${parseFloat(p.premium_paid).toFixed(2)}</td>
+<td>${p.quantity}</td>
+<td style="color:var(--text-muted); font-size:12px;">${ivDisp} / ${deltaDisp}</td>
+<td id="table-underlying-${p.id}">$${currentUPrice.toFixed(2)}</td>
+<td id="table-sellprice-${p.id}" style="font-weight:bold; color:var(--gold);">$${currentSellPrice.toFixed(2)}</td>
+<td id="table-pnl-${p.id}" class="pnl-cell" style="color:${color}">${sign}$${pnl.toFixed(2)} <span style="font-size:12px;">(${sign}${pnlPercent.toFixed(2)}%)</span></td>
+<td><button style="background:rgba(255,59,48,0.1); color:var(--red); border:1px solid var(--red); padding:6px 10px; border-radius:4px; font-weight:bold; cursor:pointer;" onclick="closePosition(${p.id})">ปิดสัญญา</button></td>
+</tr>
+`}).join('');
         }
 
         async function submitPosition(e) {
@@ -1268,9 +1274,9 @@
                             }
                         }
 
-                        currentPremium = Math.max(currentPremium, 0.01); 
+                        currentPremium = Math.max(currentPremium, 0.01);
                         let pnl = (currentPremium - initialPremium) * 100 * p.quantity;
-                        
+
                         const principal = initialPremium * p.quantity * 100;
                         const pnlPercent = principal > 0 ? (pnl / principal) * 100 : 0;
 
@@ -1315,10 +1321,10 @@
                     body: JSON.stringify(payload)
                 });
                 const data = await res.json();
-                
+
                 const resDiv = document.getElementById('sim-result');
                 resDiv.style.display = 'block';
-                
+
                 if (data.error) {
                     resDiv.innerHTML = `<span style="color:var(--red); font-weight:bold;">⚠️ เกิดข้อผิดพลาด: ${data.error}</span>`;
                     return;
@@ -1334,26 +1340,26 @@
 
                 const color = data.pnl_total >= 0 ? 'var(--green)' : 'var(--red)';
                 const sign = data.pnl_total >= 0 ? '+' : '';
-                
+
                 resDiv.innerHTML = `
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
-                        <div>
-                            <span style="color:var(--text-muted); font-size:12px;">จุดคุ้มทุน (Break-Even)</span><br>
-                            <strong style="font-size:16px;">$${data.break_even}</strong>
-                        </div>
-                        <div>
-                            <span style="color:var(--text-muted); font-size:12px;">พรีเมียมคาดการณ์ ณ วันเป้าหมาย</span><br>
-                            <strong style="font-size:16px; color:var(--gold);">$${data.simulated_premium}</strong>
-                        </div>
-                        <div>
-                            <span style="color:var(--text-muted); font-size:12px;">กำไร/ขาดทุนโดยประมาณ (ต่อสัญญา)</span><br>
-                            <strong style="font-size:16px; color:${color};">${sign}$${data.pnl_total} (${sign}${data.pnl_percent}%)</strong>
-                        </div>
-                    </div>
-                    <div style="margin-top:10px; font-size:12px; color:var(--text-muted); border-top: 1px dashed var(--panel-border); padding-top: 10px;">
-                        *เหลือเวลาจนถึงวันหมดอายุ <strong>${data.days_remaining} วัน</strong> (ผลลัพธ์นี้คำนวณหัก Time Decay จากค่า IV ที่ให้มาเรียบร้อยแล้ว)
-                    </div>
-                `;
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+<div>
+<span style="color:var(--text-muted); font-size:12px;">จุดคุ้มทุน (Break-Even)</span><br>
+<strong style="font-size:16px;">$${data.break_even}</strong>
+</div>
+<div>
+<span style="color:var(--text-muted); font-size:12px;">พรีเมียมคาดการณ์ ณ วันเป้าหมาย</span><br>
+<strong style="font-size:16px; color:var(--gold);">$${data.simulated_premium}</strong>
+</div>
+<div>
+<span style="color:var(--text-muted); font-size:12px;">กำไร/ขาดทุนโดยประมาณ (ต่อสัญญา)</span><br>
+<strong style="font-size:16px; color:${color};">${sign}$${data.pnl_total} (${sign}${data.pnl_percent}%)</strong>
+</div>
+</div>
+<div style="margin-top:10px; font-size:12px; color:var(--text-muted); border-top: 1px dashed var(--panel-border); padding-top: 10px;">
+*เหลือเวลาจนถึงวันหมดอายุ <strong>${data.days_remaining} วัน</strong> (ผลลัพธ์นี้คำนวณหัก Time Decay จากค่า IV ที่ให้มาเรียบร้อยแล้ว)
+</div>
+`;
             } catch (err) {
                 console.error(err);
                 alert("ไม่สามารถติดต่อเซิร์ฟเวอร์ได้");
