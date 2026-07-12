@@ -1,17 +1,19 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TradingView Lightweight Charts</title>
     <!-- โหลดไลบรารี Lightweight Charts -->
     <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
-    
+
     <style>
         :root {
             --blue: #3b82f6;
             --gold: #fbbf24;
         }
+
         body {
             background-color: #141722;
             color: #cbd5e1;
@@ -19,6 +21,7 @@
             margin: 0;
             padding: 20px;
         }
+
         .header-container {
             display: flex;
             justify-content: space-between;
@@ -26,23 +29,27 @@
             margin-bottom: 10px;
             padding: 0 10px;
         }
+
         .extended-hours {
             display: flex;
             gap: 15px;
             font-size: 14px;
             font-weight: bold;
         }
+
         /* กำหนดขนาดของคอนเทนเนอร์กราฟ */
         #chart-container {
             width: 100%;
             height: 450px;
         }
+
         #volume-container {
             width: 100%;
             height: 150px;
         }
     </style>
 </head>
+
 <body>
 
     <!-- ส่วนหัวที่มีราคา Post-market (นำ Pre-market ออกแล้ว) -->
@@ -65,25 +72,25 @@
         // 1. สร้างกราฟแท่งเทียน (Candlestick Chart)
         // ==========================================
         const chart = LightweightCharts.createChart(chartContainer, {
-            layout: { 
-                textColor: '#cbd5e1', 
-                background: { type: 'solid', color: '#141722' } 
+            layout: {
+                textColor: '#cbd5e1',
+                background: { type: 'solid', color: '#141722' }
             },
-            grid: { 
-                vertLines: { color: '#1e2232' }, 
-                horzLines: { color: '#1e2232' } 
+            grid: {
+                vertLines: { color: '#1e2232' },
+                horzLines: { color: '#1e2232' }
             },
-            leftPriceScale: { 
-                visible: true, 
-                borderColor: '#242733', 
-                scaleMargins: { top: 0.12, bottom: 0.12 } 
+            leftPriceScale: {
+                visible: true,
+                borderColor: '#242733',
+                scaleMargins: { top: 0.12, bottom: 0.12 }
             },
             // 🟢 จุดแก้ไข: เพิ่ม minimumWidth: 80
-            rightPriceScale: { 
-                visible: true, 
-                borderColor: '#242733', 
-                scaleMargins: { top: 0.12, bottom: 0.12 }, 
-                minimumWidth: 80 
+            rightPriceScale: {
+                visible: true,
+                borderColor: '#242733',
+                scaleMargins: { top: 0.12, bottom: 0.12 },
+                minimumWidth: 80
             },
             timeScale: {
                 borderColor: '#242733',
@@ -99,10 +106,10 @@
         });
 
         const candlestickSeries = chart.addCandlestickSeries({
-            upColor: '#26a69a', 
-            downColor: '#ef5350', 
-            borderVisible: false, 
-            wickUpColor: '#26a69a', 
+            upColor: '#26a69a',
+            downColor: '#ef5350',
+            borderVisible: false,
+            wickUpColor: '#26a69a',
             wickDownColor: '#ef5350'
         });
 
@@ -110,22 +117,22 @@
         // 2. สร้างกราฟวอลลุ่ม (Volume Chart)
         // ==========================================
         const volumeChart = LightweightCharts.createChart(volumeContainer, {
-            layout: { 
-                textColor: '#cbd5e1', 
-                background: { type: 'solid', color: '#141722' } 
+            layout: {
+                textColor: '#cbd5e1',
+                background: { type: 'solid', color: '#141722' }
             },
-            grid: { 
-                vertLines: { color: '#1e2232' }, 
-                horzLines: { color: '#1e2232' } 
+            grid: {
+                vertLines: { color: '#1e2232' },
+                horzLines: { color: '#1e2232' }
             },
-            leftPriceScale: { 
+            leftPriceScale: {
                 visible: false // ซ่อนแกนซ้ายของวอลลุ่ม
             },
             // 🟢 จุดแก้ไข: เพิ่ม minimumWidth: 80 ให้เท่ากับกราฟด้านบน
-            rightPriceScale: { 
-                visible: true, 
-                borderColor: '#242733', 
-                minimumWidth: 80 
+            rightPriceScale: {
+                visible: true,
+                borderColor: '#242733',
+                minimumWidth: 80
             },
             timeScale: {
                 borderColor: '#242733',
@@ -142,7 +149,7 @@
         const volumeSeries = volumeChart.addHistogramSeries({
             color: '#26a69a',
             priceFormat: { type: 'volume' },
-            priceScaleId: '', 
+            priceScaleId: '',
         });
 
         // ==========================================
@@ -170,4 +177,5 @@
 
     </script>
 </body>
+
 </html>
