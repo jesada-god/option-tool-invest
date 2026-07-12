@@ -775,7 +775,30 @@
         </div>
     </div>
 
-    <div class="ai-panel">
+    <div class="portfolio-panel" style="margin-top: 20px; border-top: 3px solid var(--blue);">
+        <h3 style="margin:0; font-size:16px; color:var(--blue);">🔮 What-If Simulator (จำลองเป้าหมาย & คำนวณ Time Decay)</h3>
+        <p style="font-size:12px; color:var(--text-muted); margin: 6px 0 15px 0;">ใส่ค่า IV เพื่อให้โมเดล Black-Scholes หักลบค่าเสื่อมเวลา (Theta) อัตโนมัติตามวันที่คุณต้องการ</p>
+        
+        <div class="form-grid">
+            <input type="number" id="sim-strike" placeholder="Strike Price ($)" step="0.01">
+            <select id="sim-type">
+                <option value="CALL">CALL</option>
+                <option value="PUT">PUT</option>
+            </select>
+            <input type="date" id="sim-exp" placeholder="วันหมดอายุ" title="วันหมดอายุสัญญา">
+            <input type="number" id="sim-premium" placeholder="ราคาที่ซื้อมา ($)" step="0.01">
+            <input type="number" id="sim-iv" placeholder="IV (%) เช่น 65.5" step="0.1">
+            <input type="number" id="sim-target-price" placeholder="ราคาหุ้นแม่เป้าหมาย ($)" step="0.01">
+            <input type="date" id="sim-target-date" placeholder="วันที่คาดว่าจะถึงเป้า" title="วันที่คาดว่าจะถึงเป้า">
+            <button onclick="runSimulator()" class="btn-submit" style="background:var(--blue); color:white;">คำนวณผลลัพธ์</button>
+        </div>
+
+        <div id="sim-result" style="margin-top: 15px; font-size: 14px; display: none; padding: 15px; background: #1c2030; border-radius: 6px; border: 1px solid var(--panel-border);">
+            <!-- ผลลัพธ์จะแสดงตรงนี้ -->
+        </div>
+    </div>
+
+    <div class="ai-panel" style="margin-top: 20px;">
         <h3 style="margin:0 0 10px 0; color: var(--gold); font-size: 16px;">🤖 API Live Analysis</h3>
         <div id="ai-text" class="ai-content" style="font-size: 14px; line-height: 1.5;">กำลังเชื่อมต่อ Backend...</div>
     </div>
@@ -1250,6 +1273,66 @@
                     }
                 });
             };
+        }
+
+        // --- 🔮 What-If Simulator Logic ---
+        async function runSimulator() {
+            const payload = {
+                strike_price: parseFloat(document.getElementById('sim-strike').value),
+                option_type: document.getElementById('sim-type').value,
+                expiration: document.getElementById('sim-exp').value,
+                premium_paid: parseFloat(document.getElementById('sim-premium').value),
+                current_iv: parseFloat(document.getElementById('sim-iv').value),
+                target_price: parseFloat(document.getElementById('sim-target-price').value),
+                target_date: document.getElementById('sim-target-date').value
+            };
+
+            // เช็คว่ากรอกครบไหม
+            if (Object.values(payload).some(val => val === "" || isNaN(val) && typeof val !== 'string')) {
+                alert("กรุณากรอกข้อมูลจำลองให้ครบทุกช่องครับ");
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/simulate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                
+                const resDiv = document.getElementById('sim-result');
+                resDiv.style.display = 'block';
+                
+                if (data.error) {
+                    resDiv.innerHTML = `<span style="color:var(--red); font-weight:bold;">⚠️ ${data.error}</span>`;
+                } else {
+                    const color = data.pnl_per_share >= 0 ? 'var(--green)' : 'var(--red)';
+                    const sign = data.pnl_per_share >= 0 ? '+' : '';
+                    
+                    resDiv.innerHTML = `
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                            <div>
+                                <span style="color:var(--text-muted); font-size:12px;">จุดคุ้มทุน (Break-Even)</span><br>
+                                <strong style="font-size:16px;">$${data.break_even}</strong>
+                            </div>
+                            <div>
+                                <span style="color:var(--text-muted); font-size:12px;">พรีเมียมคาดการณ์ ณ วันเป้าหมาย</span><br>
+                                <strong style="font-size:16px; color:var(--gold);">$${data.simulated_premium}</strong>
+                            </div>
+                            <div>
+                                <span style="color:var(--text-muted); font-size:12px;">กำไร/ขาดทุนโดยประมาณ</span><br>
+                                <strong style="font-size:16px; color:${color};">${sign}$${data.pnl_per_share} (${sign}${data.pnl_percent}%)</strong>
+                            </div>
+                        </div>
+                        <div style="margin-top:10px; font-size:12px; color:var(--text-muted); border-top: 1px dashed var(--panel-border); padding-top: 10px;">
+                            *เหลือเวลาจนถึงวันหมดอายุ <strong>${data.days_remaining} วัน</strong> (ผลลัพธ์นี้คำนวณหัก Time Decay จากค่า IV ที่ให้มาเรียบร้อยแล้ว)
+                        </div>
+                    `;
+                }
+            } catch (err) {
+                console.error(err);
+            }
         }
 
         // เริ่มต้นการทำงานทั้งหมดเมื่อโหลดหน้าเว็บ

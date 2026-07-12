@@ -5,6 +5,7 @@ import asyncio
 import random
 import json
 import requests
+import math
 from datetime import datetime, time as dtime
 from zoneinfo import ZoneInfo
 import yfinance as yf
@@ -817,6 +818,78 @@ async def websocket_endpoint(websocket: WebSocket, ticker: str):
     except Exception:
         pass
 
+# ---------------------------------------------------------------------------
+# 🔮 Options What-If Simulator (Black-Scholes Model)
+# ---------------------------------------------------------------------------
+def norm_cdf(x):
+    """ฟังก์ชันสะสมความน่าจะเป็นแบบปกติ (Standard Normal CDF)"""
+    return (1.0 + math.erf(x / math.sqrt(2.0))) / 2.0
+
+def black_scholes(S, K, T, r, sigma, option_type="CALL"):
+    """
+    S: ราคาหุ้นเป้าหมาย (Target Price)
+    K: ราคา Strike
+    T: เวลาที่เหลือจนกว่าจะหมดอายุ (เป็นสัดส่วนของปี เช่น 30 วัน = 30/365)
+    r: อัตราดอกเบี้ยปลอดความเสี่ยง (ใช้ 0.05 หรือ 5%)
+    sigma: ค่าความผันผวนแฝง (IV - Implied Volatility)
+    """
+    if T <= 0:
+        return max(0.0, S - K) if option_type == "CALL" else max(0.0, K - S)
+    
+    # ป้องกันกรณี IV เป็น 0
+    sigma = max(sigma, 0.001) 
+    
+    d1 = (math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
+    d2 = d1 - sigma * math.sqrt(T)
+    
+    if option_type == "CALL":
+        return S * norm_cdf(d1) - K * math.exp(-r * T) * norm_cdf(d2)
+    else:
+        return K * math.exp(-r * T) * norm_cdf(-d2) - S * norm_cdf(-d1)
+
+class SimulatorModel(BaseModel):
+    strike_price: float
+    option_type: str
+    expiration: str
+    premium_paid: float
+    current_iv: float
+    target_price: float
+    target_date: str
+
+@app.post("/api/simulate")
+def simulate_option(data: SimulatorModel):
+    try:
+        # คำนวณวันหมดอายุ และจำนวนวันที่เหลือจนถึงเป้าหมาย
+        exp_date = datetime.strptime(data.expiration, "%Y-%m-%d")
+        tgt_date = datetime.strptime(data.target_date, "%Y-%m-%d")
+        
+        days_to_exp = (exp_date - tgt_date).days
+        if days_to_exp < 0:
+            return {"error": "วันที่ตั้งเป้าหมาย ต้องไม่เกินวันหมดอายุของสัญญา!"}
+        
+        T = days_to_exp / 365.0
+        r = 0.05  # กำหนด Risk-free rate ที่ 5%
+        sigma = data.current_iv / 100.0  # แปลง IV จากเปอร์เซ็นต์เป็นทศนิยม
+
+        # คำนวณราคาพรีเมียมตามเป้าหมาย (รับรู้ Time Decay อัตโนมัติจากค่า T ที่ลดลง)
+        simulated_premium = black_scholes(data.target_price, data.strike_price, T, r, sigma, data.option_type)
+        
+        # คำนวณกำไร/ขาดทุน
+        pnl_per_share = simulated_premium - data.premium_paid
+        pnl_percent = (pnl_per_share / data.premium_paid) * 100 if data.premium_paid > 0 else 0
+        
+        # คำนวณจุดคุ้มทุน (Break-even)
+        break_even = data.strike_price + data.premium_paid if data.option_type == "CALL" else data.strike_price - data.premium_paid
+
+        return {
+            "simulated_premium": round(simulated_premium, 2),
+            "pnl_per_share": round(pnl_per_share, 2),
+            "pnl_percent": round(pnl_percent, 2),
+            "days_remaining": days_to_exp,
+            "break_even": round(break_even, 2)
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 if __name__ == "__main__":
     import uvicorn
