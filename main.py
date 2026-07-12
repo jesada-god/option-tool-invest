@@ -101,6 +101,41 @@ def get_price_bundle(ticker: str) -> dict:
     pre_price = info.get('preMarketPrice')
     post_price = info.get('postMarketPrice')
 
+    # ⭐ [แก้ไขเพิ่มเติม] ระบบดึงราคา Pre-Market / Post-Market สำรองอย่างแม่นยำกรณีค่าใน info เป็น None
+    # หมายเหตุ: preMarketPrice ของ Yahoo มักถูกล้างค่ากลับเป็น None ทันทีที่พ้นช่วง Pre-Market จริง
+    # (ต่างจาก postMarketPrice ที่มักค้างค่าล่าสุดไว้ข้ามคืน) จึงต้องพึ่ง fallback จากข้อมูลย้อนหลังบ่อยกว่า
+    def _fill_from_history(period: str, interval: str):
+        nonlocal pre_price, post_price
+        try:
+            h = stock.history(period=period, interval=interval, prepost=True)
+        except Exception:
+            return
+        if h.empty:
+            return
+        if h.index.tz is None:
+            h = h.tz_localize("UTC").tz_convert("America/New_York")
+        else:
+            h = h.tz_convert("America/New_York")
+
+        if not pre_price:
+            pre_df = h.between_time("04:00", "09:29")
+            if not pre_df.empty:
+                pre_price = float(pre_df['Close'].iloc[-1])
+
+        if not post_price:
+            post_df = h.between_time("16:00", "20:00")
+            if not post_df.empty:
+                post_price = float(post_df['Close'].iloc[-1])
+
+    if not pre_price or not post_price:
+        # ระดับ 1: ข้อมูล 5 นาที ย้อนหลัง 5 วัน (ครอบคลุมวันหยุดสุดสัปดาห์ / วันหยุดยาว)
+        _fill_from_history("5d", "5m")
+
+    if not pre_price or not post_price:
+        # ระดับ 2: ถ้ายังไม่เจอ (บางหุ้นสภาพคล่องต่ำ Yahoo ไม่มีข้อมูล prepost แบบ 5 นาที)
+        # ลองช่วงเวลาที่กว้างขึ้นแบบ 15 นาที ย้อนหลัง 1 เดือน
+        _fill_from_history("1mo", "15m")
+
     last_close = reg_price or prev_close
     if not last_close:
         try:

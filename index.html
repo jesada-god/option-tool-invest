@@ -351,7 +351,7 @@
             height: 480px;
         }
 
-        #rsichart {
+        #volumechart {
             width: 100%;
             height: 120px;
             border-top: 1px solid var(--panel-border);
@@ -609,7 +609,7 @@
                 height: 380px;
             }
 
-            #rsichart {
+            #volumechart {
                 height: 100px;
             }
 
@@ -676,7 +676,7 @@
             </div>
         </div>
         <div id="tvchart"></div>
-        <div id="rsichart"></div>
+        <div id="volumechart"></div>
     </div>
 
     <div class="side-panel">
@@ -816,13 +816,13 @@
         let isChangingData = false;
         let currentLivePrice = 0;
         let watchlist = [];
-        let ws = null; // สำหรับเชื่อมต่อ WebSocket
+        let ws = null; 
         let searchDebounce = null;
 
         const searchInput = document.getElementById('search-input');
         const autocompleteList = document.getElementById('autocomplete-list');
 
-        // --- 🔎 ค้นหาหุ้นจากฐานข้อมูล Ticker ฝั่ง Backend (รองรับหุ้นได้จำนวนมาก) ---
+        // --- 🔎 ค้นหาหุ้นจากฐานข้อมูล Ticker ฝั่ง Backend ---
         async function fetchTickerMatches(val) {
             try {
                 const res = await fetch(`/api/tickers?q=${encodeURIComponent(val)}`);
@@ -886,9 +886,9 @@
         const candleSeries = chart.addCandlestickSeries({ upColor: '#00c57f', downColor: '#ff3b30', borderVisible: false });
         const leftDummySeries = chart.addLineSeries({ priceScaleId: 'left', color: 'transparent', lastValueVisible: false, priceLineVisible: false });
 
-        // --- 📊 ตั้งค่าชาร์ต RSI ---
-        const rsiContainer = document.getElementById('rsichart');
-        const rsiChart = LightweightCharts.createChart(rsiContainer, {
+        // --- 📊 [แก้ไขโครงสร้าง] ปรับเปลี่ยนจากชาร์ต RSI เดิม ให้เป็น Volume Chart ---
+        const volumeContainer = document.getElementById('volumechart');
+        const volumeChart = LightweightCharts.createChart(volumeContainer, {
             layout: { textColor: '#cbd5e1', background: { type: 'solid', color: '#141722' } },
             grid: { vertLines: { color: '#1e2232' }, horzLines: { color: '#1e2232' } },
             leftPriceScale: { visible: false },
@@ -904,20 +904,24 @@
                 axisPressedMouseMove: { time: true, price: false }
             }
         });
-        const rsiSeries = rsiChart.addLineSeries({ color: '#f0b90b', lineWidth: 1.5 });
+        // กำหนดให้ Series เป็นแบบ Histogram (แท่งปริมาณซื้อขาย) แทน Line แบบเดิม
+        const volumeSeries = volumeChart.addHistogramSeries({
+            priceFormat: { type: 'volume' },
+            priceScaleId: 'right',
+        });
 
-        // --- 🔄 ระบบซิงค์กราฟหลักและ RSI แบบใหม่ด้วย LogicalRange ---
+        // --- 🔄 ระบบซิงค์กราฟหลักและกราฟ Volume ด้วย LogicalRange ---
         let isSyncing = false;
 
         chart.timeScale().subscribeVisibleLogicalRangeChange(logicalRange => {
             if (!isSyncing && !isChangingData && logicalRange !== null) {
                 isSyncing = true;
-                rsiChart.timeScale().setVisibleLogicalRange(logicalRange);
+                volumeChart.timeScale().setVisibleLogicalRange(logicalRange);
                 isSyncing = false;
             }
         });
 
-        rsiChart.timeScale().subscribeVisibleLogicalRangeChange(logicalRange => {
+        volumeChart.timeScale().subscribeVisibleLogicalRangeChange(logicalRange => {
             if (!isSyncing && !isChangingData && logicalRange !== null) {
                 isSyncing = true;
                 chart.timeScale().setVisibleLogicalRange(logicalRange);
@@ -927,16 +931,16 @@
 
         new ResizeObserver(() => {
             chart.applyOptions({ width: chartContainer.clientWidth, height: chartContainer.clientHeight });
-            rsiChart.applyOptions({ width: rsiContainer.clientWidth, height: rsiContainer.clientHeight });
+            volumeChart.applyOptions({ width: volumeContainer.clientWidth, height: volumeContainer.clientHeight });
         }).observe(chartContainer);
 
         function resetChartView() {
             if (globalChartData && globalChartData.length > 0) {
                 chart.priceScale('right').applyOptions({ autoScale: true });
                 chart.priceScale('left').applyOptions({ autoScale: true });
-                rsiChart.priceScale('right').applyOptions({ autoScale: true });
+                volumeChart.priceScale('right').applyOptions({ autoScale: true });
                 chart.timeScale().scrollToRealTime();
-                rsiChart.timeScale().scrollToRealTime();
+                volumeChart.timeScale().scrollToRealTime();
             }
         }
 
@@ -1051,7 +1055,7 @@
                 document.getElementById('pre-price').innerText = stats.pre_price ? `$${stats.pre_price.toFixed(2)}` : '-';
                 document.getElementById('post-price').innerText = stats.post_price ? `$${stats.post_price.toFixed(2)}` : '-';
 
-                // Call/Put gauges: มาจาก Backend (Technical 60% + Fundamental 40%)
+                // Call/Put gauges
                 document.getElementById('call-score-val').innerText = `${stats.call_score}/100`;
                 document.getElementById('call-score-fill').style.width = `${stats.call_score}%`;
                 document.getElementById('put-score-val').innerText = `${stats.put_score}/100`;
@@ -1064,13 +1068,19 @@
 
                 const candles = chartData.map(d => ({ time: d.time, open: d.open, high: d.high, low: d.low, close: d.close }));
                 const lines = chartData.map(d => ({ time: d.time, value: d.close }));
-                const rsis = chartData.map(d => ({ time: d.time, value: d.rsi }));
+                
+                // ⭐ [แก้ไขฟีดข้อมูล] แปลงข้อมูลจัดส่งเข้า Volume Histogram แทนกราฟเส้นแบบเดิม
+                const volumes = chartData.map(d => ({ 
+                    time: d.time, 
+                    value: d.volume,
+                    color: d.close >= d.open ? '#00c57f' : '#ff3b30' // หากปิดบวกให้แท่งวอลลุ่มสีเขียว ปิดลบสีแดง
+                }));
 
                 candleSeries.setData(candles);
                 leftDummySeries.setData(lines);
-                rsiSeries.setData(rsis);
+                volumeSeries.setData(volumes); // นำข้อมูลเข้าสู่หน้าอินดิเคเตอร์ตัวใหม่
 
-                // 3. Fetch Indicators (S/R) — D1 basis for all timeframes except "week"
+                // 3. Fetch Indicators (S/R)
                 const indRes = await fetch(`/api/indicators?ticker=${currentTicker}&timeframe=${currentTimeframe}`);
                 srData = await indRes.json();
                 renderSRLadder();
@@ -1080,7 +1090,7 @@
                 const aiData = await aiRes.json();
                 document.getElementById('ai-text').innerText = aiData.summary;
 
-                // 5. Connect WebSocket (เฉพาะช่วงตลาดเปิดจริง) & Fetch Portfolio
+                // 5. Connect WebSocket & Fetch Portfolio
                 if (currentMarketSession === "REGULAR") {
                     initWebSocket();
                 } else if (ws) {
@@ -1239,21 +1249,18 @@
                     leftDummySeries.update({ time: lastData.time, value: currentLivePrice });
                 }
 
-                // 🌟 อัปเดตราคา P&L แบบ Real-time โดยใช้ค่า Delta ของจริง
+                // อัปเดตราคา P&L แบบ Real-time
                 activePositions.forEach(p => {
                     if (p.ticker === currentTicker) {
                         const entryU = parseFloat(p.entry_underlying_price);
                         const initialPremium = parseFloat(p.premium_paid);
                         let currentPremium = initialPremium;
 
-                        // ถ้าผู้ใช้กรอก Delta ให้เอามาคำนวณการเปลี่ยนแปลงของพรีเมียมเลย (เร็วและแม่นยำกว่า)
                         if (p.delta && parseFloat(p.delta) !== 0) {
                             let actualDelta = parseFloat(p.delta);
-                            // แก้ทางเผื่อ User กรอก Delta ฝั่ง PUT เป็นค่าบวก
                             if (p.option_type === "PUT" && actualDelta > 0) actualDelta = -actualDelta;
                             currentPremium = initialPremium + (actualDelta * (currentLivePrice - entryU));
                         } else {
-                            // ถ้าไม่ใส่ Delta มา จะประเมินคร่าวๆ ด้วย Delta = 0.5
                             if (p.option_type === "CALL") {
                                 currentPremium += (currentLivePrice - entryU) * 0.5;
                             } else {
@@ -1261,7 +1268,7 @@
                             }
                         }
 
-                        currentPremium = Math.max(currentPremium, 0.01); // ราคาพรีเมียมต่ำสุดคือ 0.01
+                        currentPremium = Math.max(currentPremium, 0.01); 
                         let pnl = (currentPremium - initialPremium) * 100 * p.quantity;
                         
                         const principal = initialPremium * p.quantity * 100;
@@ -1296,7 +1303,6 @@
                 target_date: document.getElementById('sim-target-date').value
             };
 
-            // เช็คว่ากรอกครบไหม
             if (Object.values(payload).some(val => val === "" || isNaN(val) && typeof val !== 'string')) {
                 alert("กรุณากรอกข้อมูลจำลองให้ครบทุกช่องครับ");
                 return;
@@ -1313,7 +1319,6 @@
                 const resDiv = document.getElementById('sim-result');
                 resDiv.style.display = 'block';
                 
-                // ดักจับ Error หากฝั่ง API คำนวณไม่ได้หรือพัง
                 if (data.error) {
                     resDiv.innerHTML = `<span style="color:var(--red); font-weight:bold;">⚠️ เกิดข้อผิดพลาด: ${data.error}</span>`;
                     return;
@@ -1327,7 +1332,6 @@
                     return;
                 }
 
-                // หากไม่มี Error ค่อยแสดงผลลัพธ์
                 const color = data.pnl_total >= 0 ? 'var(--green)' : 'var(--red)';
                 const sign = data.pnl_total >= 0 ? '+' : '';
                 
@@ -1352,11 +1356,10 @@
                 `;
             } catch (err) {
                 console.error(err);
-                alert("ไม่สามารถติดต่อเซิร์ฟเวอร์ได้ ลองเช็คหน้า Render ว่า Deploy เสร็จสมบูรณ์หรือยังครับ");
+                alert("ไม่สามารถติดต่อเซิร์ฟเวอร์ได้");
             }
         }
 
-        // เริ่มต้นการทำงานทั้งหมดเมื่อโหลดหน้าเว็บ
         async function bootTerminal() {
             await fetchWatchlist();
             await fetchDashboardData();
